@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {importEntries,matchPositionFile,storedRecordingId,directoryEntries} from '../import-matching.js';
-import {QUALITY_PRESETS,cameraConstraints,recorderOptions,cameraQualitySummary,optimizeTrack} from '../quality.js';
+import {QUALITY_PRESETS,cameraConstraints,recorderOptions,recordingMimeType,cameraQualitySummary,optimizeTrack} from '../quality.js';
 const entries=paths=>importEntries(paths.map(path=>({name:path.split('/').at(-1),webkitRelativePath:path})));
 const match=paths=>{const e=entries(paths);return matchPositionFile(e[0],e)};
 test('associate exact export names, prefer metadata, support Android TXT and older downloads',()=>{
@@ -45,6 +45,23 @@ test('quality readout reports actual fallback without confusing portrait dimensi
   assert.match(cameraQualitySummary('high',{width:1280,height:720,frameRate:30}),/実際の入力：1280 × 720.*端末の対応範囲/);
   assert.doesNotMatch(cameraQualitySummary('high',{width:1080,height:1920,frameRate:30}),/端末の対応範囲/);
   assert.match(cameraQualitySummary('ultra'),/設定：3840 × 2160/);
+});
+test('60fps capture requests native geometry and leaves fps flexible',async()=>{
+  const c=cameraConstraints('smooth','environment').video;
+  assert.deepEqual(c.resizeMode,{exact:'none'});
+  assert.deepEqual(c.aspectRatio,{ideal:16/9});
+  assert.deepEqual(c.frameRate,{ideal:60});
+  for(const id of ['high','ultra','compact'])assert.equal(cameraConstraints(id,'environment').video.resizeMode,undefined);
+  const track={contentHint:''};await optimizeTrack(track,'smooth');assert.equal(track.contentHint,'detail');
+});
+test('iPhone/iPad 60fps uses supported MP4; other presets/platforms keep existing codecs',()=>{
+  for(const device of [{userAgent:'iPhone Safari'},{userAgent:'Macintosh Safari',maxTouchPoints:5}]){
+    assert.equal(recordingMimeType('smooth',()=>true,device),'video/mp4');
+    assert.equal(recordingMimeType('high',()=>true,device),'video/webm;codecs=vp8');
+    assert.equal(recordingMimeType('smooth',type=>type==='video/webm',device),'video/webm');
+    assert.equal(recordingMimeType('smooth',()=>false,device),undefined);
+  }
+  assert.equal(recordingMimeType('smooth',()=>true,{userAgent:'Android Chrome'}),'video/webm;codecs=vp8');
 });
 test('continuous controls are optional and unsupported devices still record',async()=>{
   let applied;const track={contentHint:'',getCapabilities:()=>({focusMode:['manual','continuous']}),applyConstraints:async c=>{applied=c}};

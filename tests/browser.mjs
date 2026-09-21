@@ -31,10 +31,11 @@ try{
   await page.addInitScript(()=>{
     navigator.mediaDevices.getUserMedia=async constraints=>{
       window.lastCameraConstraints=constraints;
-      const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;
+      const smooth=constraints.video.frameRate.ideal===60;
+      const canvas=document.createElement('canvas');canvas.width=smooth?640:320;canvas.height=smooth?360:240;
       const ctx=canvas.getContext('2d');let tick=0;
-      setInterval(()=>{ctx.fillStyle='#345b76';ctx.fillRect(0,0,320,240);ctx.fillStyle='#c8dce7';ctx.fillText(`TEST VIDEO ${tick++}`,20,20)},30);
-      return canvas.captureStream(30);
+      setInterval(()=>{ctx.fillStyle='#345b76';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#c8dce7';ctx.fillText(`TEST VIDEO ${tick++}`,20,20);ctx.fillStyle='#ffff00';ctx.beginPath();ctx.arc(canvas.width/2,canvas.height/2,40,0,Math.PI*2);ctx.fill()},smooth?16:30);
+      return canvas.captureStream(smooth?60:30);
     };
     window.showSaveFilePicker=undefined;
     localStorage.setItem('road-damage-save-destination','removed-provider');
@@ -88,7 +89,19 @@ try{
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='1件');
   const capture=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.capture});
   assert.equal(capture.quality,'smooth');assert.equal(capture.requestedVideoBitsPerSecond,24000000);
-  assert.equal(capture.width,320);assert.equal(capture.height,240);assert.equal(capture.frameRate,30);
+  assert.equal(capture.width,640);assert.equal(capture.height,360);assert.equal(capture.frameRate,60);
+  await page.waitForFunction(()=>document.getElementById('playback').readyState>=2);
+  await page.locator('#playback').evaluate(video=>new Promise(resolve=>{video.addEventListener('seeked',resolve,{once:true});video.currentTime=0.5}));
+  const geometry=await page.locator('#playback').evaluate(video=>{
+    const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+    const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0);const data=ctx.getImageData(0,0,canvas.width,canvas.height).data;
+    let left=Infinity,right=-1,top=Infinity,bottom=-1;
+    for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){const i=(y*canvas.width+x)*4;if(data[i]>180&&data[i+1]>180&&data[i+2]<90){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y)}}
+    const box=video.getBoundingClientRect();return {width:video.videoWidth,height:video.videoHeight,circleWidth:right-left+1,circleHeight:bottom-top+1,displayRatio:box.width/box.height};
+  });
+  assert.equal(geometry.width,640);assert.equal(geometry.height,360);
+  assert.ok(geometry.circleWidth>70&&Math.abs(geometry.circleWidth-geometry.circleHeight)<=2,`decoded recording preserves a circular target: ${JSON.stringify(geometry)}`);
+  assert.ok(Math.abs(geometry.displayRatio-16/9)<0.01,'playback element follows recorded aspect ratio');
   await page.waitForSelector('#routeMap .route-marker');await assertCentered('route');
   assert.equal(await page.locator('#routeNote').isVisible(),false);
   const mapBox=await page.locator('#routeViewport').boundingBox(),readout=await page.locator('.map-readout').boundingBox();

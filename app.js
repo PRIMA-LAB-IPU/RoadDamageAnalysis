@@ -1,5 +1,5 @@
 import {ImportSource} from './import-controller.js';
-import {qualityPreset,cameraConstraints,recorderOptions,cameraQualitySummary,optimizeTrack} from './quality.js';
+import {qualityPreset,cameraConstraints,recorderOptions,recordingMimeType,cameraQualitySummary,optimizeTrack} from './quality.js';
 import {positionAt, normalizePoints, interpolateFrames, makeCsv, parseLog} from './core.js';
 import {listRecordings, getRecording, putRecording, deleteRecording} from './storage.js';
 import {TrackMap} from './map-view.js';
@@ -126,12 +126,13 @@ function toggleRecord(){
   if(unsaved&&!confirm('未保存の記録があります。先にダウンロードしてください。新しい録画を開始しますか？'))return;
   playback.pause();chunks=[];bytes=0;sessionGps=[];recordingProblem='';
   try{
-    const mime=['video/webm;codecs=vp8','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t));
     const quality=$('qualitySelect').value;
+    const mime=recordingMimeType(quality,type=>MediaRecorder.isTypeSupported(type),navigator);
     recorder=new MediaRecorder(stream,recorderOptions(quality,mime));
     const settings=stream.getVideoTracks()[0].getSettings();
     sessionCapture={quality,requested:{...qualityPreset(quality)},width:settings.width??null,height:settings.height??null,
-      frameRate:settings.frameRate??qualityPreset(quality).fps,requestedVideoBitsPerSecond:qualityPreset(quality).bitrate,
+      frameRate:settings.frameRate??qualityPreset(quality).fps,aspectRatio:settings.aspectRatio??(settings.width/settings.height||null),resizeMode:settings.resizeMode??null,
+      requestedVideoBitsPerSecond:qualityPreset(quality).bitrate,
       encoderVideoBitsPerSecond:recorder.videoBitsPerSecond??null,mimeType:recorder.mimeType,audio:stream.getAudioTracks().length>0};
     recorder.ondataavailable=e=>{
       if(e.data.size){chunks.push(e.data);bytes+=e.data.size}
