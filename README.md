@@ -1,9 +1,6 @@
-<p align="center"><img src="logo.png" width="80" alt="Prima Laboratory ロゴ"></p>
-
 # Road Damage Analysis
 
-**道路の動画とGPSを一緒に記録し、動画の再生位置に合わせて走行軌跡を確認するアプリです。
-
+道路の動画とGPSを一緒に記録し、動画の再生位置に合わせて走行軌跡を確認するアプリです。
 [撮影する](#capture) ⇒ [画質を選ぶ](#quality) ⇒  [過去の動画を開く](#library) ⇒ [再生する](#playback) ⇒ [保存する](#save) ⇒ [困ったとき](#help) ⇒ [開発者向け](#development) の順に操作します。
 
 
