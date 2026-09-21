@@ -43,6 +43,9 @@
     section[id]{scroll-margin-top:78px}.playback-column{min-width:0}.playback-column video{display:block;width:100%;aspect-ratio:16/10;min-height:240px;object-fit:contain;background:#03090d;border-radius:14px}.playback-tools{display:flex;align-items:center;gap:8px;margin-top:10px}.playback-tools button{min-width:60px;min-height:44px;padding:8px}.playback-tools label{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.75rem}.playback-tools select{width:76px;min-height:44px;padding:6px}
     .save-options #saveArchive{min-width:144px}.library-tools label{min-width:0;flex-basis:70%}.library-tools #deleteRecording{min-width:68px;color:#f8a0aa;padding:8px}.notice:empty{display:none}.panel-head>span{overflow-wrap:anywhere;max-width:100%}.section-nav a:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
     @media(max-width:420px){.section-nav a{font-size:.76rem}.library-tools>label{flex-basis:60%}.library-tools>#deleteRecording{flex:0}.playback-column video{min-height:210px}}
+    .quality-controls{padding:0 18px 16px}.quality-controls label{display:grid;gap:8px;color:var(--muted);font-size:.8rem}.quality-controls select{width:100%;font-size:.9rem}.quality-controls .notice{margin:8px 0 0;font-size:.75rem;font-variant-numeric:tabular-nums}
+    .import-source-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}.import-source-tools .button{padding:8px 16px}.import-source-tools .notice{margin:0}.import-source-tools .text-button{padding:10px}
+    .video-wrap video{object-fit:contain}.video-wrap{min-height:180px}
   </style>
   <title>Road Damage Analysis</title>
 </head>
@@ -82,6 +85,15 @@
         <button id="recordBtn" class="record-button" disabled aria-label="撮影開始"><span></span></button>
         <button id="switchBtn" class="button ghost" disabled>カメラ切替</button>
       </div>
+      <div class="quality-controls">
+        <label for="qualitySelect">録画の画質<select id="qualitySelect">
+          <option value="high" selected>高画質 · フルHD / 30 fps</option>
+          <option value="ultra">最高画質 · 4K / 30 fps</option>
+          <option value="smooth">動き優先 · フルHD / 60 fps</option>
+          <option value="compact">容量優先 · HD / 30 fps</option>
+        </select></label>
+        <p id="qualityReadout" class="notice" role="status"></p>
+      </div>
       <p class="status"><label><input id="recordAudio" type="checkbox"> 音声も録音する（マイク許可が必要）</label></p>
       <p id="status" class="status" role="status" hidden></p>
     </section>
@@ -120,11 +132,18 @@
       <p id="libraryStatus" class="notice" role="status" hidden></p>
       <details class="import-form"><summary>過去の動画・位置情報を読み込む</summary>
         <form id="importForm">
-          <div class="library-tools">
-            <label for="importVideo">動画（必須）<input id="importVideo" type="file" accept="video/*,.mp4,.webm,.mov" required></label>
-            <label for="importLog">同じ動画の位置情報（任意）<input id="importLog" type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain"></label>
-            <button id="importBtn" class="button secondary" type="submit">読み込んで保存</button>
+          <div class="import-source-tools">
+            <button id="chooseImportFolder" class="button" type="button">フォルダーを開く</button>
+            <button id="chooseImportFiles" class="text-button" type="button">ファイルを開く</button>
+            <span id="importSourceSummary" class="notice"></span>
           </div>
+          <input id="importFolder" type="file" webkitdirectory multiple hidden>
+          <input id="importFiles" type="file" multiple accept="video/*,.mp4,.webm,.mov,.m4v,.ogv,.json,.csv,.txt" hidden>
+          <div class="library-tools">
+            <label for="importVideo">動画<select id="importVideo" required><option value="">フォルダーまたはファイルを開いてください</option></select></label>
+            <button id="importBtn" class="button secondary" type="submit" disabled>読み込んで保存</button>
+          </div>
+          <p id="importMatch" class="notice" role="status">フォルダー内の位置情報をファイル名で自動照合します。</p>
         </form>
       </details>
     </section>

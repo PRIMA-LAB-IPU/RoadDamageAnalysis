@@ -3,6 +3,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import {fileURLToPath} from 'node:url';
 import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
@@ -28,7 +29,8 @@ try{
     return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e1ecdf"/><path d="M0 128H256M128 0V256" stroke="white" stroke-width="12"/><path d="M0 128H256M128 0V256" stroke="#c3c6b2" stroke-width="1"/></svg>'});
   });
   await page.addInitScript(()=>{
-    navigator.mediaDevices.getUserMedia=async()=>{
+    navigator.mediaDevices.getUserMedia=async constraints=>{
+      window.lastCameraConstraints=constraints;
       const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;
       const ctx=canvas.getContext('2d');let tick=0;
       setInterval(()=>{ctx.fillStyle='#345b76';ctx.fillRect(0,0,320,240);ctx.fillStyle='#c8dce7';ctx.fillText(`TEST VIDEO ${tick++}`,20,20)},30);
@@ -61,6 +63,12 @@ try{
   await page.locator('#prepareBtn').click();
   await page.waitForFunction(()=>document.getElementById('prepareBtn').getAttribute('aria-label')==='位置情報・カメラ許可中');
   assert.equal(await page.locator('#cameraEmpty').isVisible(),false);
+  assert.equal(await page.locator('#importLog').count(),0);
+  assert.equal(await page.locator('#qualitySelect').inputValue(),'high');
+  assert.equal(await page.evaluate(()=>window.lastCameraConstraints.video.width.ideal),1920);
+  assert.match(await page.locator('#qualityReadout').textContent(),/実際の入力：320 × 240.*目標 16 Mbps.*端末の対応範囲/);
+  await page.locator('#qualitySelect').selectOption('smooth');
+  await page.waitForFunction(()=>window.lastCameraConstraints.video.frameRate.ideal===60&&!document.getElementById('qualitySelect').disabled);
   await page.waitForSelector('#liveMap .leaflet-tile-loaded');
   assert.equal(await page.locator('#liveMap .leaflet-tile').first().evaluate(i=>getComputedStyle(i).position),'absolute');
   async function assertCentered(prefix){
@@ -74,9 +82,13 @@ try{
   await page.locator('#liveZoomIn').click();await page.waitForTimeout(200);
   assert.ok(zoomRequests.includes(18));await assertCentered('live');
   await page.locator('#recordBtn').click();await page.waitForTimeout(1100);
+  assert.equal(await page.locator('#qualitySelect').isDisabled(),true);
   await context.setGeolocation({latitude:39.704,longitude:141.1534,accuracy:12});await page.waitForTimeout(1100);
   await page.locator('#recordBtn').click();
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='1件');
+  const capture=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.capture});
+  assert.equal(capture.quality,'smooth');assert.equal(capture.requestedVideoBitsPerSecond,24000000);
+  assert.equal(capture.width,320);assert.equal(capture.height,240);assert.equal(capture.frameRate,30);
   await page.waitForSelector('#routeMap .route-marker');await assertCentered('route');
   assert.equal(await page.locator('#routeNote').isVisible(),false);
   const mapBox=await page.locator('#routeViewport').boundingBox(),readout=await page.locator('.map-readout').boundingBox();
@@ -150,6 +162,58 @@ try{
   await page.waitForFunction(()=>window.sharedData?.names[0]==='road_damage_selection-test.webm');
   await page.locator('#recordingSelect').selectOption({index:2});await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
   await page.locator('#saveArchive').click();await page.waitForFunction(()=>window.sharedData?.names[0]!=='road_damage_selection-test.webm');
+  assert.equal(await page.locator('#qualitySelect').inputValue(),'smooth','quality preference survives reload');
+  const fixture=await page.evaluate(async()=>{
+    const {listRecordings,getRecording}=await import('/storage.js');const row=(await listRecordings()).find(r=>r.id!=='selection-test');
+    const record=await getRecording(row.id);return {id:record.id,bytes:Array.from(new Uint8Array(await record.video.arrayBuffer())),points:record.points,meta:record.meta};
+  });
+  const videoPayload=name=>({name,mimeType:'video/webm',buffer:Buffer.from(fixture.bytes)});
+  const logPayload=(name,lat)=>({name,mimeType:'text/plain',buffer:Buffer.from(JSON.stringify({durationSeconds:2.2,gps:[{videoTime:0,latitude:lat,longitude:141.1}]}))});
+  const details=page.locator('#importForm').locator('..');await details.evaluate(el=>el.open=true);
+  // Android-style shared filenames: video alone can recover GPS already on this device.
+  await page.locator('#importFiles').setInputFiles(videoPayload(`road_damage_${fixture.id}.webm`));
+  await page.waitForFunction(()=>document.getElementById('importMatch').textContent.includes('端末の録画データから'));
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='3件');
+  // Real directory input: two folders may contain identical filenames without mixing GPS.
+  const fixtureRoot=await fs.mkdtemp(path.join(output||os.tmpdir(),'import-fixture-'));
+  for(const [folder,lat] of [['a',39.8],['b',40.2]]){
+    await fs.mkdir(path.join(fixtureRoot,folder),{recursive:true});
+    await fs.writeFile(path.join(fixtureRoot,folder,'video.webm'),Buffer.from(fixture.bytes));
+    await fs.writeFile(path.join(fixtureRoot,folder,'metadata.json'),logPayload('metadata.json',lat).buffer);
+  }
+  await page.locator('#importFolder').setInputFiles(fixtureRoot);
+  const options=await page.locator('#importVideo option').evaluateAll(options=>options.map(o=>({value:o.value,text:o.textContent})));
+  await page.locator('#importVideo').selectOption(options.find(o=>o.text.endsWith('/b/video.webm')).value);
+  assert.match(await page.locator('#importMatch').textContent(),/metadata.json（自動選択）/);
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='4件');
+  await page.waitForFunction(()=>document.getElementById('mapCoordinates').textContent.includes('40.200000'));
+  await page.locator('#importVideo').selectOption(options.find(o=>o.text.endsWith('/a/video.webm')).value);
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='5件');
+  await page.waitForFunction(()=>document.getElementById('mapCoordinates').textContent.includes('39.800000'));
+  // Combined files fallback auto-selects JSON TXT and never carries GPS over to unmatched videos.
+  await page.locator('#importFiles').setInputFiles([videoPayload('trip.webm'),logPayload('trip_metadata.json.txt',38.5)]);
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='6件');
+  await page.waitForFunction(()=>document.getElementById('mapCoordinates').textContent.includes('38.500000'));
+  await page.locator('#importFiles').setInputFiles(videoPayload('no-gps.webm'));
+  assert.match(await page.locator('#importMatch').textContent(),/対応する位置情報がありません/);
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='7件');
+  await page.waitForFunction(()=>document.getElementById('mapCoordinates').textContent==='この時刻の位置情報なし');
+  await page.locator('#importFiles').setInputFiles([videoPayload('bad.webm'),{name:'bad.json',mimeType:'application/json',buffer:Buffer.from('broken')}]);
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryStatus').textContent.includes('読み込めませんでした'));
+  assert.equal(await page.locator('#libraryCount').textContent(),'7件');
+  await page.locator('#importFiles').setInputFiles([videoPayload('trip.webm'),logPayload('trip_metadata.json.txt',38.5)]);
+  await page.locator('#importBtn').click();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='8件');
+  // Exercise the native directory-picker path as well as the directory-input fallback.
+  await page.evaluate(({bytes})=>{
+    const file=(name,data)=>({kind:'file',name,getFile:async()=>new File([data],name)});
+    window.showDirectoryPicker=async()=>({async *values(){yield file('native.webm',new Uint8Array(bytes));yield file('native.csv','videoTime,latitude,longitude\n0,37.5,141.1')}});
+  },fixture);
+  await page.locator('#chooseImportFolder').click();
+  await page.waitForFunction(()=>document.getElementById('importMatch').textContent.includes('native.csv'));
+  assert.equal(await page.locator('#importBtn').isEnabled(),true);
+  await page.locator('#prepareBtn').click();
+  await page.waitForFunction(()=>!document.getElementById('qualitySelect').disabled);
+  if(output)await page.screenshot({path:path.join(output,'quality-import-mobile.png'),fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log('PASS: requested headings/text removal, automatic review, one-click save/share with active user gesture, worker file preparation, empty selection, speed/seek controls, plus Android share/map/history regressions.');
+  console.log('PASS: quality constraints, actual capture metadata, setting persistence, folder/combined-file import, filename matching, native directory picker, stored GPS recovery, missing/invalid logs, plus recording/playback/share/map/history regressions.');
 }finally{await browser?.close();server.close()}

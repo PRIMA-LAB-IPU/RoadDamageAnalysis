@@ -33,7 +33,7 @@ export function recordingMetadata(recording) {
     frames:interpolateFrames(recording.points,recording.duration,recording.fps)};
 }
 export async function recordingArchive(recording,onProgress){
-  const readme='Road Damage Analysis\n\n動画と同じフォルダーのmetadata.jsonまたはgps.csvをアプリから読み込むと、動画と軌跡を再生できます。\nフレーム位置と時刻は推定値です。\n';
+  const readme='Road Damage Analysis\n\nZIPを展開後、アプリの「フォルダーを開く」で動画と位置情報のフォルダーを開き、動画を選択するとmetadata.jsonまたはgps.csvを自動照合します。\nフレーム位置と時刻は推定値です。\n';
   const zip=await makeZip([
     {name:`video.${recording.ext}`,blob:recording.video},
     {name:'gps.csv',blob:new Blob([makeCsv(recording.points)],{type:'text/csv;charset=utf-8'})},

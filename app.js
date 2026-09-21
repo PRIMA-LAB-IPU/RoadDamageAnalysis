@@ -1,3 +1,5 @@
+import {ImportSource} from './import-controller.js';
+import {qualityPreset,cameraConstraints,recorderOptions,cameraQualitySummary,optimizeTrack} from './quality.js';
 import {positionAt, normalizePoints, interpolateFrames, makeCsv, parseLog} from './core.js';
 import {listRecordings, getRecording, putRecording, deleteRecording} from './storage.js';
 import {TrackMap} from './map-view.js';
@@ -14,6 +16,17 @@ let archiveFile=null,archiveId=null,exportBusy=false,shareFiles=[];
 const sharedFiles=new Set();
 let preparationWorker=null,preparationVersion=0,preparingFiles=false,selectionVersion=0;
 let animationId=null;
+let sessionCapture=null;
+const importSource=new ImportSource(controls);
+try{const quality=localStorage.getItem('road-damage-quality');if(['high','ultra','smooth','compact'].includes(quality))$('qualitySelect').value=quality}catch{}
+function updateQualityReadout(){
+  const settings=stream?.getVideoTracks()[0]?.getSettings()||{};
+  $('qualityReadout').textContent=cameraQualitySummary($('qualitySelect').value,settings);
+  const width=preview.videoWidth||settings.width,height=preview.videoHeight||settings.height;
+  if(width&&height)preview.parentElement.style.aspectRatio=String(width/height);
+}
+preview.addEventListener('resize',updateQualityReadout);
+updateQualityReadout();
 const fmt=seconds=>{
   const n=Math.max(0,Math.floor(Number.isFinite(seconds)?seconds:0));
   return [Math.floor(n/3600),Math.floor(n%3600/60),n%60].map(v=>String(v).padStart(2,'0')).join(':');
@@ -29,11 +42,11 @@ function controls(){
   $('cameraPermission').classList.toggle('granted',cameraReady);$('gpsPermission').classList.toggle('granted',gpsGranted);
   $('recordBtn').disabled=preparing||saving||libraryBusy||exportBusy||(!isRecording()&&(!cameraReady||!gpsGranted||!window.MediaRecorder));
   $('switchBtn').disabled=busy||!cameraReady;
-  $('recordAudio').disabled=busy;
+  $('recordAudio').disabled=busy;$('qualitySelect').disabled=busy;
   $('clearTrackBtn').disabled=isRecording()||saving;
   $('recordingSelect').disabled=busy||libraryBusy;
   $('deleteRecording').disabled=busy||libraryBusy||!$('recordingSelect').value;
-  $('importBtn').disabled=busy||libraryBusy;
+  importSource.updateDisabled(busy);
   ['downloadVideo','downloadGps','downloadMeta'].forEach(id=>$(id).disabled=!result||saving||isRecording()||exportBusy);
   const dropbox=$('saveDestination').value==='dropbox',prepared=archiveId===result?.id&&shareFiles.length>0;
   $('saveArchive').disabled=busy||!result||(dropbox&&(!prepared||preparingFiles||!supportsFileShare(shareFiles)));
@@ -52,10 +65,11 @@ async function prepareCamera(){
   startGps();
   try {
     stream?.getTracks().forEach(track=>track.stop());
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facingMode},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:$('recordAudio').checked});
+    stream=await navigator.mediaDevices.getUserMedia(cameraConstraints($('qualitySelect').value,facingMode,$('recordAudio').checked));
+    await optimizeTrack(stream.getVideoTracks()[0],$('qualitySelect').value);
     preview.srcObject=stream;
     await preview.play();
-    cameraReady=true;$('cameraEmpty').hidden=true;
+    cameraReady=true;$('cameraEmpty').hidden=true;updateQualityReadout();
     stream.getVideoTracks()[0].addEventListener('ended',()=>{
       cameraReady=false;$('cameraEmpty').hidden=false;
       if(isRecording()){recordingProblem='カメラ接続が切れたため録画を終了しました。';stopRecording()}
@@ -64,7 +78,7 @@ async function prepareCamera(){
     status(gpsGranted?'準備完了。中央のボタンで撮影を開始できます。':'カメラの準備完了。GPSの取得を待っています。');
     if(!window.MediaRecorder)status('このブラウザは録画に対応していません。保存済み動画の閲覧は利用できます。',true);
   } catch(error){
-    stream?.getTracks().forEach(t=>t.stop());stream=null;preview.srcObject=null;$('cameraEmpty').hidden=false;
+    stream?.getTracks().forEach(t=>t.stop());stream=null;preview.srcObject=null;$('cameraEmpty').hidden=false;updateQualityReadout();
     status(error.name==='NotAllowedError'?'カメラが許可されていません。ブラウザのサイト設定で許可して再試行してください。':'カメラを開始できません。他のアプリで使用中でないか確認して再試行してください。',true);
   } finally {preparing=false;controls()}
 }
@@ -113,7 +127,12 @@ function toggleRecord(){
   playback.pause();chunks=[];bytes=0;sessionGps=[];recordingProblem='';
   try{
     const mime=['video/webm;codecs=vp8','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t));
-    recorder=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:6000000}:undefined);
+    const quality=$('qualitySelect').value;
+    recorder=new MediaRecorder(stream,recorderOptions(quality,mime));
+    const settings=stream.getVideoTracks()[0].getSettings();
+    sessionCapture={quality,requested:{...qualityPreset(quality)},width:settings.width??null,height:settings.height??null,
+      frameRate:settings.frameRate??qualityPreset(quality).fps,requestedVideoBitsPerSecond:qualityPreset(quality).bitrate,
+      encoderVideoBitsPerSecond:recorder.videoBitsPerSecond??null,mimeType:recorder.mimeType,audio:stream.getAudioTracks().length>0};
     recorder.ondataavailable=e=>{
       if(e.data.size){chunks.push(e.data);bytes+=e.data.size}
       if(bytes>=512*1024*1024&&isRecording()){recordingProblem='録画サイズが512 MBに達したため終了しました。';stopRecording()}
@@ -139,10 +158,10 @@ async function finishRecording(){
   $('recordBtn').classList.remove('recording');$('recordBtn').setAttribute('aria-label','撮影開始');$('recIndicator').hidden=true;
   $('timer').textContent=fmt(duration);
   if(!video.size){saving=false;status('動画データを取得できませんでした。カメラを再接続してください。',true);controls();return}
-  const createdAt=new Date(startedAt).toISOString(),fps=stream?.getVideoTracks()[0]?.getSettings().frameRate||30;
+  const createdAt=new Date(startedAt).toISOString(),fps=sessionCapture?.frameRate||30;
   result={id:crypto.randomUUID(),name:`撮影 ${new Date(startedAt).toLocaleString('ja-JP')}`,createdAt,video,ext,duration,
     points:normalizePoints(sessionGps),fps,meta:{formatVersion:2,createdAt,durationSeconds:duration,estimatedFrameRate:fps,
-      videoFile:`video.${ext}`,gpsFile:'gps.csv',audio:stream.getAudioTracks().length>0,note:'Frame times are estimated at the camera frame rate, not decoded frame timestamps. Positions are interpolated GPS estimates; endpoints use the nearest sample.'}};
+      videoFile:`video.${ext}`,gpsFile:'gps.csv',audio:sessionCapture?.audio??false,capture:sessionCapture,note:'Frame times are estimated at the camera frame rate, not decoded frame timestamps. Positions are interpolated GPS estimates; endpoints use the nearest sample.'}};
   unsaved=true;
   try{
     await putRecording(result);unsaved=false;await refreshLibrary(result.id);
@@ -187,22 +206,24 @@ function drawLiveTrack(){const points=isRecording()?sessionGps:gpsLog;liveMap.se
 
 async function importRecording(event){
   event.preventDefault();if(libraryBusy||isRecording()||saving)return;
-  const video=$('importVideo').files[0],log=$('importLog').files[0];if(!video)return;
+  const {video,match}=importSource.snapshot();if(!video||importSource.busy)return;
+  if(match.status==='ambiguous'){libraryStatus('同名の位置情報が複数あります。フォルダーを選び直してください。');return}
+  const log=match.entry?.file;
   if(unsaved&&!confirm('未保存の記録があります。新しい動画を読み込みますか？'))return;
   libraryBusy=true;controls();libraryStatus('動画と位置情報を読み込んでいます…');
   try{
     if(!video.size)throw new Error('空の動画は読み込めません。');
     if(log&&log.size>100*1024*1024)throw new Error('位置情報ファイルは100 MB以下で選択してください。');
-    const {points,meta}=log?parseLog(await log.text(),log.name):{points:[],meta:{}};
+    const {points,meta}=log?parseLog(await log.text(),log.name):match.status==='stored'?{points:match.recording.points,meta:match.recording.meta}:{points:[],meta:{}};
     const measured=await videoDuration(video);
     const duration=Number.isFinite(measured)?measured:Number.isFinite(meta.durationSeconds)?meta.durationSeconds:points.at(-1)?.videoTime||0;
     if(points.length&&Number.isFinite(measured)&&points.at(-1).videoTime>measured+2)throw new Error('位置情報が動画の長さを超えています。同じ撮影のファイルを選択してください。');
     const imported={id:crypto.randomUUID(),name:video.name,createdAt:new Date().toISOString(),video,ext:video.name.split('.').pop().toLowerCase(),duration,points,
       fps:Number.isFinite(meta.estimatedFrameRate)&&meta.estimatedFrameRate>0?Math.min(120,meta.estimatedFrameRate):30,meta};
     result=imported;unsaved=true;
-    try{await putRecording(imported);unsaved=false;await refreshLibrary(imported.id);libraryStatus('読み込み、保存しました。位置情報は同じ撮影のファイルか再生画面で確認してください。')}
+    try{await putRecording(imported);unsaved=false;await refreshLibrary(imported.id);libraryStatus(points.length?'動画と対応する位置情報を保存しました。':'位置情報なしで動画を保存しました。')}
     catch{libraryStatus('読み込みましたが端末への保存に失敗しました。空き容量を確認してください。この画面では再生できます。')}
-    showReview();$('importForm').reset();
+    showReview();
   }catch(error){libraryStatus(`読み込めませんでした：${error.message}`)}
   finally{libraryBusy=false;controls()}
 }
@@ -288,6 +309,11 @@ destinationHint();
 
 $('prepareBtn').onclick=prepareCamera;$('recordBtn').onclick=toggleRecord;
 $('recordAudio').onchange=()=>{if(cameraReady)prepareCamera()};
+$('qualitySelect').onchange=async()=>{
+  if(isRecording()||saving)return;
+  try{localStorage.setItem('road-damage-quality',$('qualitySelect').value)}catch{}
+  if(cameraReady)await prepareCamera();else updateQualityReadout();
+};
 $('switchBtn').onclick=()=>{facingMode=facingMode==='environment'?'user':'environment';prepareCamera()};
 $('clearTrackBtn').onclick=()=>{if(isRecording())return;gpsLog=latestGps?[latestGps]:[];drawLiveTrack();$('pointCount').textContent=gpsLog.length};
 function clearSelectedRecording(){
