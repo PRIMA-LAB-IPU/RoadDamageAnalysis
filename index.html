@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07141d">
+  <meta name="description" content="スマートフォンで動画とGPSを同時記録し、端末へ保存するPWA">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynhtSkWn2QZjMZ74qjMZ/8w5B+yk=" crossorigin="">
+  <style>
+:root{color-scheme:dark;--bg:#061018;--panel:#0c1c26;--panel2:#102631;--line:#23404d;--text:#edf8fb;--muted:#91a9b4;--cyan:#2de0cf;--cyan2:#16a89d;--red:#ff5265;--amber:#ffc857;font-family:Inter,"Noto Sans JP",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#103442 0,transparent 34rem),var(--bg);color:var(--text);min-height:100vh}.app-shell{width:min(1100px,100%);margin:auto;padding:24px clamp(16px,4vw,40px) 56px}.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}.eyebrow{font-size:.72rem;letter-spacing:.19em;color:var(--cyan);font-weight:800;margin:0 0 5px}.topbar h1{font-size:clamp(1.35rem,4vw,2rem);margin:0;letter-spacing:-.03em}.badge,.state{font-size:.76rem;border:1px solid var(--line);border-radius:100px;padding:7px 10px;color:var(--muted)}.badge.good,.state.good{color:var(--cyan);border-color:#247d75;background:#0b302f}.badge.bad,.state.bad{color:#ff9ca7;border-color:#713440}.capture-card,.panel{background:linear-gradient(145deg,rgba(17,42,54,.94),rgba(9,25,34,.96));border:1px solid var(--line);border-radius:22px;box-shadow:0 20px 60px #0005;overflow:hidden}.video-wrap{position:relative;aspect-ratio:16/9;background:#020609;min-height:250px}.video-wrap video{width:100%;height:100%;object-fit:cover;display:block}.video-shade{position:absolute;inset:0;background:linear-gradient(transparent 60%,#020609b5);pointer-events:none}.camera-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);text-align:center}.camera-empty strong{color:var(--text)}.camera-empty span{font-size:.85rem}.camera-icon{font-size:2.2rem;color:var(--cyan);border:1px solid var(--line);width:72px;height:72px;display:grid;place-items:center;border-radius:50%;margin-bottom:8px}.rec-indicator{position:absolute;top:16px;left:16px;background:#070b0ddd;border:1px solid #66313a;border-radius:100px;padding:7px 10px;font-size:.75rem;font-weight:900;letter-spacing:.12em}.rec-indicator span{display:inline-block;width:8px;height:8px;background:var(--red);border-radius:50%;margin-right:7px;animation:pulse 1.2s infinite}@keyframes pulse{50%{opacity:.35}}.hud{position:absolute;bottom:14px;left:16px;right:16px;display:flex;gap:22px}.hud div{display:flex;flex-direction:column}.hud span{font-size:.66rem;color:#adc0c8;text-transform:uppercase}.hud b{font-variant-numeric:tabular-nums;font-size:.95rem}.controls{display:grid;grid-template-columns:1fr 82px 1fr;align-items:center;gap:18px;padding:18px}.button{border:1px solid var(--line);background:transparent;color:var(--text);min-height:46px;border-radius:12px;font-size:.9rem;font-weight:700}.button.secondary{background:var(--cyan);color:#03201f;border-color:var(--cyan)}.button:disabled,.download-card:disabled{opacity:.38}.record-button{width:74px;height:74px;border-radius:50%;border:3px solid #c8e8e7;background:transparent;display:grid;place-items:center;margin:auto}.record-button span{width:54px;height:54px;border-radius:50%;background:var(--red);transition:.2s}.record-button.recording span{border-radius:8px;width:28px;height:28px}.status{color:var(--muted);font-size:.85rem;text-align:center;margin:0;padding:0 16px 18px}.data-grid{display:grid;grid-template-columns:.75fr 1.25fr;gap:18px;margin-top:18px}.panel{padding:20px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.panel h2{font-size:1rem;margin:0}.coordinates{display:grid;grid-template-columns:1fr 1fr;gap:18px 12px;margin:0}.coordinates div{border-left:2px solid var(--line);padding-left:10px}.coordinates dt{font-size:.72rem;color:var(--muted)}.coordinates dd{margin:4px 0 0;font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums}.text-button{border:0;background:none;color:var(--cyan);font-size:.8rem}.track-panel canvas{width:100%;height:180px;border-radius:12px;background:#071219;display:block}.map-note,.privacy-note{font-size:.72rem;color:var(--muted);margin:8px 0 0}.export-panel{margin-top:18px}.export-panel .panel-head>span{font-size:.8rem;color:var(--muted)}.downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.download-card{text-align:left;background:#0a1820;border:1px solid var(--line);border-radius:14px;color:var(--text);padding:14px}.download-card b,.download-card span{display:block}.download-card span{font-size:.72rem;color:var(--muted);margin-top:4px}.download-card:not(:disabled):hover{border-color:var(--cyan);transform:translateY(-1px)}button{cursor:pointer}button:focus-visible{outline:3px solid var(--amber);outline-offset:3px}@media(max-width:700px){.app-shell{padding-top:16px}.data-grid{grid-template-columns:1fr}.video-wrap{aspect-ratio:3/4}.controls{grid-template-columns:1fr 76px 1fr;gap:10px}.button{font-size:.78rem}.downloads{grid-template-columns:1fr}.hud{gap:14px}.badge{font-size:.68rem}.panel{padding:16px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.review-panel{margin-top:18px}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.review-grid>video,.map-wrap{width:100%;aspect-ratio:16/10;min-height:280px;border-radius:14px;background:#03090d}.review-grid>video{object-fit:contain}.map-wrap{position:relative;overflow:hidden}.map-wrap #routeMap{position:absolute;inset:0}.map-readout{position:absolute;z-index:500;left:10px;right:10px;bottom:10px;display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #ffffff24;border-radius:10px;background:#061018df;color:var(--text);font-size:.78rem;pointer-events:none}.map-readout b{font-variant-numeric:tabular-nums;color:var(--cyan)}.route-marker{width:22px;height:22px;border:4px solid #fff;border-radius:50%;background:var(--red);box-shadow:0 2px 10px #000a}.leaflet-control-attribution{font-size:10px!important}@media(max-width:760px){.review-grid{grid-template-columns:1fr}.review-grid>video,.map-wrap{min-height:230px}}
+
+  </style>
+  <title>GeoFrame Recorder</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">FIELD CAPTURE</p>
+        <h1>GeoFrame Recorder</h1>
+      </div>
+      <div id="secureBadge" class="badge">HTTPS確認中</div>
+    </header>
+
+    <section class="capture-card" aria-label="撮影画面">
+      <div class="video-wrap">
+        <video id="preview" autoplay muted playsinline></video>
+        <div class="video-shade"></div>
+        <div class="rec-indicator" id="recIndicator" hidden><span></span>REC</div>
+        <div class="camera-empty" id="cameraEmpty">
+          <div class="camera-icon" aria-hidden="true">◉</div>
+          <strong>カメラを準備してください</strong>
+          <span>位置情報とカメラの利用許可が必要です</span>
+        </div>
+        <div class="hud">
+          <div><span>時間</span><b id="timer">00:00:00</b></div>
+          <div><span>GPS精度</span><b id="accuracy">—</b></div>
+          <div><span>測位点</span><b id="pointCount">0</b></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="prepareBtn" class="button secondary">カメラを準備</button>
+        <button id="recordBtn" class="record-button" disabled aria-label="撮影開始"><span></span></button>
+        <button id="switchBtn" class="button ghost" disabled>カメラ切替</button>
+      </div>
+      <p id="status" class="status" role="status">「カメラを準備」を押してください。</p>
+    </section>
+
+    <section class="data-grid">
+      <article class="panel position-panel">
+        <div class="panel-head"><h2>現在位置</h2><span id="gpsState" class="state waiting">待機中</span></div>
+        <dl class="coordinates">
+          <div><dt>緯度</dt><dd id="latitude">—</dd></div>
+          <div><dt>経度</dt><dd id="longitude">—</dd></div>
+          <div><dt>高度</dt><dd id="altitude">—</dd></div>
+          <div><dt>速度</dt><dd id="speed">—</dd></div>
+        </dl>
+      </article>
+
+      <article class="panel track-panel">
+        <div class="panel-head"><h2>移動軌跡</h2><button id="clearTrackBtn" class="text-button">消去</button></div>
+        <canvas id="trackCanvas" width="800" height="360" aria-label="GPS移動軌跡"></canvas>
+        <p class="map-note">相対的な軌跡を表示します。北が上です。</p>
+      </article>
+    </section>
+
+    <section class="panel export-panel" id="exportPanel">
+      <div class="panel-head">
+        <div><p class="eyebrow">LAST RECORDING</p><h2>記録データ</h2></div>
+        <span id="recordingSummary">まだ記録がありません</span>
+      </div>
+      <div class="downloads">
+        <button id="downloadVideo" class="download-card" disabled><b>動画</b><span id="videoFileLabel">video.webm / .mp4</span></button>
+        <button id="downloadGps" class="download-card" disabled><b>GPSログ</b><span>gps.csv</span></button>
+        <button id="downloadMeta" class="download-card" disabled><b>フレーム対応表</b><span>metadata.json</span></button>
+      </div>
+      <p class="privacy-note">データはこの端末内で処理され、外部サーバーへ送信されません。</p>
+    </section>
+
+    <section class="panel review-panel" id="reviewPanel" hidden>
+      <div class="panel-head">
+        <div><p class="eyebrow">SYNCHRONIZED REVIEW</p><h2>動画と走行軌跡</h2></div>
+        <span id="reviewPosition">00:00 / 00:00</span>
+      </div>
+      <div class="review-grid">
+        <video id="playback" controls playsinline preload="metadata"></video>
+        <div class="map-wrap">
+          <div id="routeMap" aria-label="撮影軌跡の地図"></div>
+          <div class="map-readout"><b id="mapTime">00:00.000</b><span id="mapCoordinates">位置情報なし</span></div>
+        </div>
+      </div>
+      <p class="privacy-note">動画を再生・シークすると、地図上のマーカーが同じ時刻の推定位置へ移動します。地図表示にはインターネット接続が必要です。</p>
+    </section>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+const $=id=>document.getElementById(id);
+const el={preview:$('preview'),prepare:$('prepareBtn'),record:$('recordBtn'),switch:$('switchBtn'),status:$('status'),timer:$('timer'),accuracy:$('accuracy'),pointCount:$('pointCount'),lat:$('latitude'),lon:$('longitude'),alt:$('altitude'),speed:$('speed'),gpsState:$('gpsState'),cameraEmpty:$('cameraEmpty'),indicator:$('recIndicator'),canvas:$('trackCanvas'),summary:$('recordingSummary'),dv:$('downloadVideo'),dg:$('downloadGps'),dm:$('downloadMeta'),secure:$('secureBadge'),playback:$('playback'),review:$('reviewPanel'),reviewPosition:$('reviewPosition'),mapTime:$('mapTime'),mapCoordinates:$('mapCoordinates'),videoFileLabel:$('videoFileLabel')};
+let stream,mediaRecorder,chunks=[],watchId=null,gpsLog=[],sessionGps=[],startedAt=0,timerId=null,facingMode='environment',result=null,playbackUrl=null,routeMap=null,routeLine=null,routeMarker=null;
+el.secure.textContent=window.isSecureContext?'安全な接続':'HTTPSが必要';el.secure.classList.add(window.isSecureContext?'good':'bad');
+const fmtTime=ms=>{const s=Math.floor(ms/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return [h,m,s%60].map(v=>String(v).padStart(2,'0')).join(':')};
+function setStatus(message,error=false){el.status.textContent=message;el.status.style.color=error?'#ff9ca7':''}
+function chooseMime(){return ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm','video/mp4'].find(t=>MediaRecorder.isTypeSupported(t))||''}
+async function prepareCamera(){
+  try{if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{facingMode,width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30}},audio:true});el.preview.srcObject=stream;el.cameraEmpty.hidden=true;el.record.disabled=false;el.switch.disabled=false;el.prepare.textContent='再接続';startGps();setStatus('準備完了。中央のボタンで撮影を開始できます。')}
+  catch(e){setStatus('カメラを利用できません。ブラウザの権限設定を確認してください。',true)}
+}
+function startGps(){
+  if(watchId!==null||!navigator.geolocation)return;
+  el.gpsState.textContent='測位中';
+  watchId=navigator.geolocation.watchPosition(p=>{
+    const c=p.coords,point={absoluteTime:new Date(p.timestamp).toISOString(),timestamp:p.timestamp,latitude:c.latitude,longitude:c.longitude,altitude:c.altitude,accuracy:c.accuracy,speed:c.speed,heading:c.heading};
+    gpsLog.push(point);if(mediaRecorder?.state==='recording')sessionGps.push({...point,videoTime:(p.timestamp-startedAt)/1000});
+    el.lat.textContent=c.latitude.toFixed(7);el.lon.textContent=c.longitude.toFixed(7);el.alt.textContent=c.altitude==null?'—':`${c.altitude.toFixed(1)} m`;el.speed.textContent=c.speed==null?'—':`${(c.speed*3.6).toFixed(1)} km/h`;el.accuracy.textContent=`±${c.accuracy.toFixed(1)} m`;el.pointCount.textContent=mediaRecorder?.state==='recording'?sessionGps.length:gpsLog.length;el.gpsState.textContent='取得中';el.gpsState.className='state good';drawTrack();
+  },()=>{el.gpsState.textContent='取得失敗';el.gpsState.className='state bad';setStatus('位置情報を取得できません。位置情報をONにしてください。',true)},{enableHighAccuracy:true,maximumAge:0,timeout:15000});
+}
+async function toggleRecord(){
+  if(mediaRecorder?.state==='recording'){mediaRecorder.stop();return}
+  if(!stream)return;chunks=[];sessionGps=[];result=null;disableDownloads();startedAt=performance.timeOrigin+performance.now();const mime=chooseMime();
+  try{mediaRecorder=new MediaRecorder(stream,mime?{mimeType:mime,videoBitsPerSecond:6000000}:undefined)}catch(e){setStatus('このブラウザでは動画録画を開始できません。',true);return}
+  mediaRecorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};mediaRecorder.onstop=finishRecording;mediaRecorder.start(1000);el.record.classList.add('recording');el.record.setAttribute('aria-label','撮影停止');el.indicator.hidden=false;el.prepare.disabled=true;el.switch.disabled=true;timerId=setInterval(()=>el.timer.textContent=fmtTime(Date.now()-startedAt),250);setStatus('動画とGPSを記録しています。');
+}
+function finishRecording(){
+  clearInterval(timerId);const endedAt=performance.timeOrigin+performance.now(),duration=(endedAt-startedAt)/1000,type=mediaRecorder.mimeType||'video/webm',ext=type.includes('mp4')?'mp4':'webm';const video=new Blob(chunks,{type});
+  const frames=interpolateFrames(sessionGps,duration,30);const meta={formatVersion:1,createdAt:new Date(startedAt).toISOString(),durationSeconds:+duration.toFixed(3),estimatedFrameRate:30,estimatedFrameCount:frames.length,videoFile:`video.${ext}`,gpsFile:'gps.csv',note:'Frame positions are linearly interpolated from browser geolocation samples.',frames};
+  result={video,ext,csv:makeCsv(sessionGps),meta:JSON.stringify(meta,null,2),duration,frames};el.record.classList.remove('recording');el.record.setAttribute('aria-label','撮影開始');el.indicator.hidden=true;el.prepare.disabled=false;el.switch.disabled=false;el.summary.textContent=`${fmtTime(duration*1000)}・GPS ${sessionGps.length}点`;el.videoFileLabel.textContent=`video.${ext}`;[el.dv,el.dg,el.dm].forEach(b=>b.disabled=false);showReview();setStatus('記録が完了しました。動画と地図を同期して確認できます。');
+}
+function interpolateFrames(points,duration,fps){const out=[],count=Math.max(0,Math.floor(duration*fps));for(let i=0;i<count;i++){const t=i/fps;if(!points.length){out.push({frame:i,videoTime:+t.toFixed(3),latitude:null,longitude:null,accuracy:null});continue}let b=points.findIndex(p=>p.videoTime>=t);if(b<0)b=points.length-1;const a=Math.max(0,b-1),p0=points[a],p1=points[b],span=p1.videoTime-p0.videoTime,r=span>0?Math.max(0,Math.min(1,(t-p0.videoTime)/span)):0;out.push({frame:i,videoTime:+t.toFixed(3),latitude:+(p0.latitude+(p1.latitude-p0.latitude)*r).toFixed(7),longitude:+(p0.longitude+(p1.longitude-p0.longitude)*r).toFixed(7),altitude:p0.altitude==null?null:+(p0.altitude+((p1.altitude??p0.altitude)-p0.altitude)*r).toFixed(2),accuracy:+(p0.accuracy+(p1.accuracy-p0.accuracy)*r).toFixed(2)})}return out}
+function makeCsv(points){const h='video_time_s,absolute_time,latitude,longitude,altitude_m,accuracy_m,speed_mps,heading_deg';return '\ufeff'+[h,...points.map(p=>[p.videoTime.toFixed(3),p.absoluteTime,p.latitude,p.longitude,p.altitude??'',p.accuracy,p.speed??'',p.heading??''].join(','))].join('\n')}
+function save(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+function disableDownloads(){[el.dv,el.dg,el.dm].forEach(b=>b.disabled=true);el.summary.textContent='記録中…'}
+function showReview(){
+  if(playbackUrl)URL.revokeObjectURL(playbackUrl);playbackUrl=URL.createObjectURL(result.video);el.playback.src=playbackUrl;el.review.hidden=false;
+  requestAnimationFrame(()=>{initRouteMap();renderRoute();el.review.scrollIntoView({behavior:'smooth',block:'start'})});
+}
+function initRouteMap(){
+  if(routeMap){routeMap.invalidateSize();return}
+  if(!window.L){el.mapCoordinates.textContent='地図を読み込めません';return}
+  routeMap=L.map('routeMap',{zoomControl:true}).setView([39.7036,141.1527],14);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap contributors'}).addTo(routeMap);
+  routeMarker=L.marker([39.7036,141.1527],{icon:L.divIcon({className:'',html:'<div class="route-marker"></div>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(routeMap);
+}
+function renderRoute(){
+  if(!routeMap||!result)return;if(routeLine)routeLine.remove();const coords=result.frames.filter(f=>f.latitude!=null).map(f=>[f.latitude,f.longitude]);
+  if(!coords.length){routeMarker?.remove();el.mapCoordinates.textContent='GPS位置情報がありません';return}
+  if(!routeMap.hasLayer(routeMarker))routeMarker.addTo(routeMap);routeLine=L.polyline(coords,{color:'#16a89d',weight:5,opacity:.9}).addTo(routeMap);coords.length===1?routeMap.setView(coords[0],18):routeMap.fitBounds(routeLine.getBounds(),{padding:[28,28]});updatePlaybackPosition();
+}
+function updatePlaybackPosition(){
+  if(!result)return;const t=el.playback.currentTime||0,d=el.playback.duration||result.duration||0;el.reviewPosition.textContent=`${fmtTime(t*1000).slice(3)} / ${fmtTime(d*1000).slice(3)}`;el.mapTime.textContent=`${Math.floor(t/60).toString().padStart(2,'0')}:${(t%60).toFixed(3).padStart(6,'0')}`;
+  const i=Math.min(result.frames.length-1,Math.max(0,Math.round(t*30))),p=result.frames[i];if(!p||p.latitude==null){el.mapCoordinates.textContent='位置情報なし';return}routeMarker?.setLatLng([p.latitude,p.longitude]);el.mapCoordinates.textContent=`${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}  ±${p.accuracy.toFixed(1)} m`;
+}
+function drawTrack(){const c=el.canvas,ctx=c.getContext('2d'),dpr=devicePixelRatio||1,w=c.clientWidth||800,h=c.clientHeight||360;if(c.width!==w*dpr||c.height!==h*dpr){c.width=w*dpr;c.height=h*dpr}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.strokeStyle='#19313d';ctx.lineWidth=1;for(let x=0;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}for(let y=0;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}const p=mediaRecorder?.state==='recording'?sessionGps:gpsLog;if(p.length<1)return;const xs=p.map(v=>v.longitude),ys=p.map(v=>v.latitude),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),pad=24,dx=maxX-minX||.00001,dy=maxY-minY||.00001;ctx.beginPath();p.forEach((v,i)=>{const x=pad+(v.longitude-minX)/dx*(w-pad*2),y=h-pad-(v.latitude-minY)/dy*(h-pad*2);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.strokeStyle='#2de0cf';ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';ctx.stroke();const last=p[p.length-1],x=pad+(last.longitude-minX)/dx*(w-pad*2),y=h-pad-(last.latitude-minY)/dy*(h-pad*2);ctx.fillStyle='#ffc857';ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill()}
+el.prepare.onclick=prepareCamera;el.record.onclick=toggleRecord;el.switch.onclick=async()=>{facingMode=facingMode==='environment'?'user':'environment';await prepareCamera()};$('clearTrackBtn').onclick=()=>{gpsLog=[];drawTrack();el.pointCount.textContent='0'};el.dv.onclick=()=>save(result.video,`recording_${stamp()}.${result.ext}`);el.dg.onclick=()=>save(new Blob([result.csv],{type:'text/csv;charset=utf-8'}),`gps_${stamp()}.csv`);el.dm.onclick=()=>save(new Blob([result.meta],{type:'application/json'}),`metadata_${stamp()}.json`);const stamp=()=>new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+el.playback.addEventListener('timeupdate',updatePlaybackPosition);el.playback.addEventListener('seeked',updatePlaybackPosition);el.playback.addEventListener('loadedmetadata',updatePlaybackPosition);window.addEventListener('resize',()=>{drawTrack();routeMap?.invalidateSize()});window.addEventListener('beforeunload',e=>{if(mediaRecorder?.state==='recording'){e.preventDefault();e.returnValue=''}});if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js');drawTrack();
+
+  </script>
+</body>
+</html>
