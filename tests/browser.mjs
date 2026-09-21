@@ -29,6 +29,23 @@ try{
     return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e1ecdf"/><path d="M0 128H256M128 0V256" stroke="white" stroke-width="12"/><path d="M0 128H256M128 0V256" stroke="#c3c6b2" stroke-width="1"/></svg>'});
   });
   await page.addInitScript(()=>{
+    const NativeRecorder=window.MediaRecorder;
+    window.MediaRecorder=class extends NativeRecorder{
+      constructor(...args){
+        super(...args);window.activeTestRecorder=this;
+        this.addEventListener('dataavailable',event=>{
+          // Exercise the former 512MB stop boundary without allocating 512MB.
+          // Blob concatenation uses the original bytes, not this JS size value.
+          if(window.reportLargeChunk&&event.data.size){Object.defineProperty(event.data,'size',{value:600*1024*1024});window.largeChunkDelivered=true}
+        });
+      }
+    };
+    window.testWakeLocks=[];
+    Object.defineProperty(navigator,'wakeLock',{value:{request:async()=>{
+      const lock=new EventTarget();lock.released=false;
+      lock.release=async()=>{lock.released=true;lock.dispatchEvent(new Event('release'))};
+      window.testWakeLocks.push(lock);return lock;
+    }}});
     navigator.mediaDevices.getUserMedia=async constraints=>{
       window.lastCameraConstraints=constraints;
       const smooth=constraints.video.frameRate.ideal===60;
@@ -82,11 +99,27 @@ try{
   await assertCentered('live');
   await page.locator('#liveZoomIn').click();await page.waitForTimeout(200);
   assert.ok(zoomRequests.includes(18));await assertCentered('live');
-  await page.locator('#recordBtn').click();await page.waitForTimeout(1100);
+  await page.evaluate(()=>window.reportLargeChunk=true);
+  await page.locator('#recordBtn').click();
+  await page.waitForFunction(()=>window.largeChunkDelivered);
+  assert.equal(await page.evaluate(()=>window.activeTestRecorder.state),'recording','600MB reported chunk does not stop recording');
+  await page.evaluate(async()=>{
+    await window.testWakeLocks.at(-1).release();
+    Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
+    Object.defineProperty(document,'hidden',{configurable:true,value:true});
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  assert.equal(await page.evaluate(()=>window.activeTestRecorder.state),'recording','hidden page does not stop recording');
+  await page.evaluate(()=>{delete document.visibilityState;delete document.hidden;document.dispatchEvent(new Event('visibilitychange'))});
+  await page.waitForFunction(()=>window.testWakeLocks.length===2);
+  assert.equal(await page.evaluate(()=>window.testWakeLocks.at(-1).released),false);
   assert.equal(await page.locator('#qualitySelect').isDisabled(),true);
   await context.setGeolocation({latitude:39.704,longitude:141.1534,accuracy:12});await page.waitForTimeout(1100);
   await page.locator('#recordBtn').click();
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='1件');
+  assert.equal(await page.evaluate(()=>window.activeTestRecorder.state),'inactive','stop button ends recording');
+  assert.equal(await page.evaluate(()=>window.testWakeLocks.every(lock=>lock.released)),true,'wake locks released after stop');
+  await page.evaluate(()=>window.reportLargeChunk=false);
   const capture=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.capture});
   assert.equal(capture.quality,'smooth');assert.equal(capture.requestedVideoBitsPerSecond,24000000);
   assert.equal(capture.width,640);assert.equal(capture.height,360);assert.equal(capture.frameRate,60);

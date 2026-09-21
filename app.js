@@ -8,7 +8,7 @@ import {recordingArchive,recordingMetadata,recordingShareFiles,shareRecordingFil
 const $=id=>document.getElementById(id);
 const preview=$('preview'), playback=$('playback');
 let stream=null, recorder=null, watchId=null, gpsGranted=false, cameraReady=false, preparing=false, saving=false, libraryBusy=false;
-let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null, chunks=[], bytes=0;
+let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null, chunks=[];
 let startedAt=0, startedMono=0, stoppedMono=0, timerId, wakeLock=null, recordingProblem='';
 let result=null, unsaved=false, playbackUrl=null;
 const liveMap=new TrackMap('live'), reviewMap=new TrackMap('route');
@@ -17,6 +17,7 @@ const sharedFiles=new Set();
 let preparationWorker=null,preparationVersion=0,preparingFiles=false,selectionVersion=0;
 let animationId=null;
 let sessionCapture=null;
+let wakeLockPending=false;
 const importSource=new ImportSource(controls);
 try{const quality=localStorage.getItem('road-damage-quality');if(['high','ultra','smooth','compact'].includes(quality))$('qualitySelect').value=quality}catch{}
 function updateQualityReadout(){
@@ -113,7 +114,13 @@ function startGps(){
 }
 
 async function acquireWakeLock(){
-  try{if(navigator.wakeLock&&isRecording()&&document.visibilityState==='visible')wakeLock=await navigator.wakeLock.request('screen')}catch{}
+  if(!navigator.wakeLock||!isRecording()||document.visibilityState!=='visible'||wakeLockPending||(wakeLock&&!wakeLock.released))return;
+  const activeRecorder=recorder;wakeLockPending=true;
+  try{
+    const lock=await navigator.wakeLock.request('screen');
+    if(recorder!==activeRecorder||!isRecording()||document.visibilityState!=='visible'){await lock.release();return}
+    wakeLock=lock;lock.addEventListener('release',()=>{if(wakeLock===lock)wakeLock=null});
+  }catch{}finally{wakeLockPending=false}
 }
 function stopRecording(){
   if(!isRecording())return;
@@ -124,7 +131,7 @@ function toggleRecord(){
   if(!cameraReady||!gpsGranted||saving)return;
   if(!latestGps||Date.now()-latestGps.timestamp>15000){status('新しいGPS位置情報を待ってから撮影してください。',true);return}
   if(unsaved&&!confirm('未保存の記録があります。先にダウンロードしてください。新しい録画を開始しますか？'))return;
-  playback.pause();chunks=[];bytes=0;sessionGps=[];recordingProblem='';
+  playback.pause();chunks=[];sessionGps=[];recordingProblem='';
   try{
     const quality=$('qualitySelect').value;
     const mime=recordingMimeType(quality,type=>MediaRecorder.isTypeSupported(type),navigator);
@@ -135,8 +142,9 @@ function toggleRecord(){
       requestedVideoBitsPerSecond:qualityPreset(quality).bitrate,
       encoderVideoBitsPerSecond:recorder.videoBitsPerSecond??null,mimeType:recorder.mimeType,audio:stream.getAudioTracks().length>0};
     recorder.ondataavailable=e=>{
-      if(e.data.size){chunks.push(e.data);bytes+=e.data.size}
-      if(bytes>=512*1024*1024&&isRecording()){recordingProblem='録画サイズが512 MBに達したため終了しました。';stopRecording()}
+      // No application-imposed size/time limit. Keep encoded Blob chunks;
+      // do not copy the entire video into an ArrayBuffer during capture.
+      if(e.data.size)chunks.push(e.data);
     };
     recorder.onstop=finishRecording;
     recorder.onerror=()=>{recordingProblem='録画エラーが発生しました。保存された動画を確認してください。';if(isRecording())stopRecording()};
@@ -144,6 +152,9 @@ function toggleRecord(){
     sessionGps=[{...latestGps,videoTime:0}];
     recorder.start(1000);
   }catch{status('録画を開始できません。カメラを再接続して再試行してください。',true);return}
+  // Previous recordings are already persisted (or explicitly discarded above).
+  // Release playback/export blobs and terminate their preparation worker.
+  clearSelectedRecording();$('recordingSelect').value='';
   $('recordBtn').classList.add('recording');$('recordBtn').setAttribute('aria-label','撮影停止');$('recIndicator').hidden=false;
   $('timer').textContent='00:00:00';$('pointCount').textContent=sessionGps.length;
   timerId=setInterval(()=>$('timer').textContent=fmt((performance.now()-startedMono)/1000),250);
@@ -152,6 +163,7 @@ function toggleRecord(){
 
 async function finishRecording(){
   saving=true;clearInterval(timerId);controls();
+  if(!stoppedMono&&!recordingProblem)recordingProblem='端末またはブラウザによって録画が終了しました。';
   if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null}
   const duration=((stoppedMono||performance.now())-startedMono)/1000;
   const type=recorder.mimeType||chunks[0]?.type||'video/webm',ext=type.includes('mp4')?'mp4':'webm';
@@ -357,7 +369,9 @@ playback.addEventListener('error',()=>{if(result)libraryStatus('動画を再生�
 
 window.addEventListener('beforeunload',e=>{if(isRecording()||saving||unsaved){e.preventDefault();e.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden&&isRecording()){recordingProblem='画面が非表示になったため録画を終了しました。';stopRecording()}
+  // A visibility change is not a request to end the recording. The browser
+  // may suspend capture independently; reacquire screen wake lock on return.
+  if(document.visibilityState==='visible')acquireWakeLock();
 });
 window.addEventListener('pagehide',()=>{if(isRecording())stopRecording();stream?.getTracks().forEach(t=>t.stop());cameraReady=false;if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}gpsGranted=false});
 window.addEventListener('pageshow',()=>{if(!cameraReady){$('cameraEmpty').hidden=false;controls()}});
