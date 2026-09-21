@@ -75,3 +75,15 @@ export async function saveArchive(file,destination,download){
   }
   download(file,file.name);return 'downloaded';
 }
+
+// Open the native picker while the click still has user activation; prepare the
+// ZIP afterwards. Unsupported browsers download once preparation is complete.
+export async function savePreparedArchive(name,prepare,download){
+  const handle=typeof window.showSaveFilePicker==='function'
+    ? await window.showSaveFilePicker({suggestedName:name,types:[{description:'動画・位置情報 ZIP',accept:{'application/zip':['.zip']}}]}) : null;
+  const file=await prepare();
+  if(!handle){download(file,file.name);return 'downloaded'}
+  const writable=await handle.createWritable();
+  try{await writable.write(file);await writable.close()}catch(error){await writable.abort().catch(()=>{});throw error}
+  return 'saved';
+}

@@ -47,6 +47,10 @@ try{
   await page.goto(origin);
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='0件');
   assert.equal(await page.title(),'Road Damage Analysis');
+  assert.equal(await page.locator('.topbar .eyebrow').textContent(),'Prima Laboratory');
+  assert.deepEqual(await page.locator('.panel h2').allTextContents(),['現在位置','移動軌跡','録画データ','データの再生','データの保存']);
+  assert.equal(await page.locator('#openRecording,#prepareArchive').count(),0);
+  assert.equal(await page.locator('#liveNote').isVisible(),false);
   assert.deepEqual(await page.locator('#saveDestination option').evaluateAll(options=>options.map(o=>o.value)),['local','dropbox']);
   assert.equal(await page.locator('#saveDestination').inputValue(),'local');
   assert.equal(await page.locator('#secureBadge').count(),0);
@@ -74,6 +78,7 @@ try{
   await page.locator('#recordBtn').click();
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='1件');
   await page.waitForSelector('#routeMap .route-marker');await assertCentered('route');
+  assert.equal(await page.locator('#routeNote').isVisible(),false);
   const mapBox=await page.locator('#routeViewport').boundingBox(),readout=await page.locator('.map-readout').boundingBox();
   assert.ok(readout.y>=mapBox.y+mapBox.height,'readout is outside the map');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
@@ -98,38 +103,53 @@ try{
   // Stable size after portrait -> landscape -> portrait changes.
   await page.setViewportSize({width:844,height:390});await page.waitForTimeout(200);await assertCentered('route');
   await page.setViewportSize({width:390,height:844});await page.waitForTimeout(200);await assertCentered('route');
-  await page.locator('#prepareArchive').click();await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
+  await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
   const download=page.waitForEvent('download');await page.locator('#saveArchive').click();const zip=await download;
   assert.match(zip.suggestedFilename(),/^road_damage_.*\.zip$/);if(output)await zip.saveAs(path.join(output,'recording.zip'));
-  await page.locator('#saveDestination').selectOption('dropbox');await page.locator('#saveArchive').click();
-  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));
+  await page.locator('#saveDestination').selectOption('dropbox');
+  await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
+  assert.equal(await page.locator('#saveArchive').textContent(),'アップロード');await page.locator('#saveArchive').click();
+  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('Dropboxを共有先に選択'));
   const shared=await page.evaluate(()=>window.sharedData);
   assert.deepEqual(shared.types,['video/webm','text/csv','text/plain']);assert.equal(shared.title,undefined);
   assert.equal(shared.names.length,3);assert.ok(shared.names.every(name=>!name.endsWith('.zip')));
   await page.evaluate(()=>window.singleFileOnly=true);
   await page.locator('#saveDestination').selectOption('local');await page.locator('#saveDestination').selectOption('dropbox');
   assert.equal(await page.locator('#saveArchive').isDisabled(),true);
-  for(const id of ['shareVideo','shareGps','shareMetadata']){await page.locator('#'+id).click();await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));assert.equal((await page.evaluate(()=>window.sharedData)).names.length,1)}
+  for(const id of ['shareVideo','shareGps','shareMetadata']){await page.locator('#'+id).click();await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('Dropboxを共有先に選択'));assert.equal((await page.evaluate(()=>window.sharedData)).names.length,1)}
   await page.evaluate(()=>{window.singleFileOnly=false;window.failShare=true});
-  await page.locator('#shareVideo').click();await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('ファイルを共有できませんでした'));
+  await page.locator('#shareVideo').click();await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有できませんでした'));
   await page.evaluate(()=>window.failShare=false);
   await page.locator('#saveDestination').selectOption('local');await page.locator('#saveDestination').selectOption('dropbox');
   await page.evaluate(()=>window.cancelShare=true);await page.locator('#saveArchive').click();
-  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有が中止'));
+  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('アップロードを中止'));
   assert.equal(await page.locator('#saveArchive').isEnabled(),true);
   if(output)await page.screenshot({path:path.join(output,'review-mobile.png'),fullPage:true});
   await page.reload();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='1件');
-  await page.locator('#recordingSelect').selectOption({index:1});await page.locator('#openRecording').click();
+  await page.locator('#recordingSelect').selectOption({index:1});
   await page.waitForSelector('#routeMap .route-marker');await assertCentered('route');
-  assert.equal(await page.locator('#saveArchive').isDisabled(),true);
+  assert.equal(await page.locator('#saveArchive').isEnabled(),true);
   // Dropbox preparation must not require a ZIP or a prior local export.
-  await page.locator('#saveDestination').selectOption('dropbox');await page.locator('#prepareArchive').click();
+  await page.locator('#saveDestination').selectOption('dropbox');
   await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
   await page.locator('#saveArchive').click();
-  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));
+  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('Dropboxを共有先に選択'));
   assert.equal((await page.evaluate(()=>window.sharedData)).names.length,3);
-  await page.locator('#saveDestination').selectOption('local');assert.equal(await page.locator('#saveArchive').isDisabled(),true);
-  await page.locator('#prepareArchive').click();await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
+  await page.locator('#saveDestination').selectOption('local');assert.equal(await page.locator('#saveArchive').isEnabled(),true);
+  await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
+  await page.locator('#playbackSpeed').selectOption('0.5');assert.equal(await page.locator('#playback').evaluate(v=>v.playbackRate),0.5);
+  await page.locator('#skipForward').click();assert.ok(await page.locator('#playback').evaluate(v=>v.currentTime<=v.duration));
+  await page.locator('#skipBack').click();assert.equal(await page.locator('#playback').evaluate(v=>v.currentTime),0);
+  await page.locator('#recordingSelect').selectOption('');assert.equal(await page.locator('#reviewPanel').isVisible(),false);assert.equal(await page.locator('#saveArchive').isDisabled(),true);
+  await page.locator('#recordingSelect').selectOption({index:1});await page.waitForSelector('#routeMap .route-marker');
+  // A new selection must never upload cached files from the previous recording.
+  await page.evaluate(async()=>{const {listRecordings,getRecording,putRecording}=await import('/storage.js');const [first]=await listRecordings();const record=await getRecording(first.id);await putRecording({...record,id:'selection-test',name:'切替テスト',createdAt:new Date().toISOString()})});
+  await page.reload();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='2件');
+  await page.locator('#recordingSelect').selectOption('selection-test');await page.locator('#saveDestination').selectOption('dropbox');
+  await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);await page.locator('#saveArchive').click();
+  await page.waitForFunction(()=>window.sharedData?.names[0]==='road_damage_selection-test.webm');
+  await page.locator('#recordingSelect').selectOption({index:2});await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
+  await page.locator('#saveArchive').click();await page.waitForFunction(()=>window.sharedData?.names[0]!=='road_damage_selection-test.webm');
   assert.deepEqual(errors,[]);
-  console.log('PASS: local/Dropbox only, removed header badge, Android rejects ZIP but shares video/CSV/text, individual share, transfer failure/cancel, plus map/recording/ZIP/history regressions.');
+  console.log('PASS: requested headings/text removal, automatic review, one-click save/share with active user gesture, worker file preparation, empty selection, speed/seek controls, plus Android share/map/history regressions.');
 }finally{await browser?.close();server.close()}

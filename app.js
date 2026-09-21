@@ -1,7 +1,7 @@
 import {positionAt, normalizePoints, interpolateFrames, makeCsv, parseLog} from './core.js';
 import {listRecordings, getRecording, putRecording, deleteRecording} from './storage.js';
 import {TrackMap} from './map-view.js';
-import {recordingArchive,recordingMetadata,recordingShareFiles,shareRecordingFiles,saveArchive,supportsFileShare} from './export.js';
+import {recordingArchive,recordingMetadata,recordingShareFiles,shareRecordingFiles,savePreparedArchive,supportsFileShare} from './export.js';
 
 const $=id=>document.getElementById(id);
 const preview=$('preview'), playback=$('playback');
@@ -12,6 +12,7 @@ let result=null, unsaved=false, playbackUrl=null;
 const liveMap=new TrackMap('live'), reviewMap=new TrackMap('route');
 let archiveFile=null,archiveId=null,exportBusy=false,shareFiles=[];
 const sharedFiles=new Set();
+let preparationWorker=null,preparationVersion=0,preparingFiles=false,selectionVersion=0;
 let animationId=null;
 const fmt=seconds=>{
   const n=Math.max(0,Math.floor(Number.isFinite(seconds)?seconds:0));
@@ -19,7 +20,7 @@ const fmt=seconds=>{
 };
 const isRecording=()=>recorder?.state==='recording';
 function status(message,error=false){$('status').hidden=!message;$('status').textContent=message;$('status').style.color=error?'#ff9ca7':''}
-function libraryStatus(message){$('libraryStatus').textContent=message}
+function libraryStatus(message){$('libraryStatus').textContent=message;$('libraryStatus').hidden=!message}
 function controls(){
   const busy=isRecording()||saving||preparing||libraryBusy||exportBusy;
   $('prepareBtn').disabled=busy;
@@ -31,13 +32,14 @@ function controls(){
   $('recordAudio').disabled=busy;
   $('clearTrackBtn').disabled=isRecording()||saving;
   $('recordingSelect').disabled=busy||libraryBusy;
-  $('openRecording').disabled=busy||libraryBusy||!$('recordingSelect').value;
   $('deleteRecording').disabled=busy||libraryBusy||!$('recordingSelect').value;
   $('importBtn').disabled=busy||libraryBusy;
   ['downloadVideo','downloadGps','downloadMeta'].forEach(id=>$(id).disabled=!result||saving||isRecording()||exportBusy);
-  $('prepareArchive').disabled=!result||busy;
   const dropbox=$('saveDestination').value==='dropbox',prepared=archiveId===result?.id&&shareFiles.length>0;
-  $('saveArchive').disabled=busy||!(dropbox?prepared&&supportsFileShare(shareFiles):archiveFile&&archiveId===result?.id);
+  $('saveArchive').disabled=busy||!result||(dropbox&&(!prepared||preparingFiles||!supportsFileShare(shareFiles)));
+  $('saveArchive').textContent=dropbox?(exportBusy?'アップロード中…':'アップロード'):(exportBusy?'保存中…':'保存');
+  $('exportPanel').setAttribute('aria-busy',String(exportBusy||preparingFiles));
+  $('reviewLink').setAttribute('aria-disabled',String(!result));
   $('saveDestination').disabled=busy;$('dropboxFiles').hidden=!dropbox||!prepared;
   ['shareVideo','shareGps','shareMetadata'].forEach((id,index)=>$(id).disabled=busy||!prepared||!supportsFileShare(shareFiles[index]));
 }
@@ -144,8 +146,8 @@ async function finishRecording(){
   unsaved=true;
   try{
     await putRecording(result);unsaved=false;await refreshLibrary(result.id);
-    status(`${recordingProblem}録画を保存しました。ライブラリからいつでも確認できます。`,!!recordingProblem);
-  }catch{libraryStatus('端末への保存に失敗しました。空き容量を確認し、記録データをダウンロードしてください。');status('保存できませんでした。画面を閉じる前に動画と位置情報をダウンロードしてください。',true)}
+    status(`${recordingProblem}録画を保存しました。`,!!recordingProblem);
+  }catch{libraryStatus('端末への保存に失敗しました。「データの保存」からダウンロードしてください。');status('保存できませんでした。画面を閉じる前に動画と位置情報をダウンロードしてください。',true)}
   finally{saving=false;controls();showReview()}
 }
 
@@ -154,12 +156,12 @@ async function refreshLibrary(selected=$('recordingSelect').value){
   select.replaceChildren(new Option(rows.length?'動画を選択してください':'保存された動画はありません',''));
   rows.forEach(row=>select.add(new Option(`${row.name} · ${fmt(row.duration)} · ${(row.size/1024/1024).toFixed(1)} MB`,row.id)));
   select.value=selected;$('libraryCount').textContent=`${rows.length}件`;
-  libraryStatus(rows.length?'動画を選んで「再生・軌跡を表示」を押してください。':'撮影した動画はここに自動保存されます。過去の動画も読み込めます。');controls();
+  libraryStatus(rows.length?'':'録画データはまだありません。');controls();
 }
 
 function showReview(){
-  resetArchive();playback.pause();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
-  playbackUrl=URL.createObjectURL(result.video);playback.src=playbackUrl;playback.load();
+  resetArchive();prepareShareFiles();playback.pause();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
+  playbackUrl=URL.createObjectURL(result.video);playback.src=playbackUrl;playback.load();playback.playbackRate=Number($('playbackSpeed').value);
   $('reviewPanel').hidden=false;$('recordingSummary').textContent=`${result.name} · ${fmt(result.duration)} · GPS ${result.points.length}点`;
   $('videoFileLabel').textContent=`video.${result.ext}`;
   requestAnimationFrame(()=>{reviewMap.setRoute(result.points);updatePlaybackPosition();$('reviewPanel').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'})});
@@ -221,55 +223,64 @@ const destinations={local:'このデバイス',dropbox:'Dropbox'};
 function exportStatus(message){$('saveStatus').hidden=!message;$('saveStatus').textContent=message}
 function destinationHint(){
   const dropbox=$('saveDestination').value==='dropbox',prepared=archiveId===result?.id&&shareFiles.length>0;
-  $('saveArchive').textContent=dropbox?'3ファイルをDropboxへ共有':'このデバイスに保存';
-  $('saveHint').textContent=!dropbox?'動画・GPS・フレーム対応表を1つのZIPにまとめて保存します。':
-    prepared&&!supportsFileShare(shareFiles)?'この端末では3ファイルをまとめて共有できません。下の個別共有ボタンを使ってください。個別共有も無効な場合は、ローカルに保存したファイルをDropboxアプリからアップロードしてください。':
-    '動画・GPS CSV・フレーム対応表（テキスト）の3ファイルを送ります。共有画面でDropboxを選択してください。Dropboxアプリのインストール・ログインが必要です。';
+  $('saveHint').textContent=!dropbox?'ZIP · 動画と位置情報':preparingFiles?'ファイルを準備しています…':
+    prepared&&!supportsFileShare(shareFiles)?'まとめて共有できません。「個別にアップロード」をお使いください。':
+    '3ファイル · 共有画面でDropboxを選択';
+  if(prepared&&dropbox&&!supportsFileShare(shareFiles))$('dropboxFiles').open=true;
 }
 function shareProgress(){
-  $('shareProgress').textContent=`共有先に渡したファイル：${sharedFiles.size} / 3。保存完了はDropbox側で確認してください。`;
+  $('shareProgress').hidden=!sharedFiles.size;
+  $('shareProgress').textContent=`共有先へ送信：${sharedFiles.size} / 3。保存完了はDropboxで確認してください。`;
 }
-function resetArchive(){archiveFile=null;archiveId=null;shareFiles=[];sharedFiles.clear();exportStatus('');shareProgress();destinationHint()}
-try{
-  const saved=localStorage.getItem('road-damage-save-destination');
-  $('saveDestination').value=Object.hasOwn(destinations,saved)?saved:'local';
-  localStorage.setItem('road-damage-save-destination',$('saveDestination').value);
-}catch{}
-$('saveDestination').onchange=()=>{try{localStorage.setItem('road-damage-save-destination',$('saveDestination').value)}catch{}exportStatus('');destinationHint();controls()};
-$('prepareArchive').onclick=async()=>{
-  if(!result||exportBusy||isRecording())return;
-  exportBusy=true;controls();exportStatus('保存用データを準備しています…');
+function resetArchive(){
+  ++preparationVersion;preparationWorker?.terminate();preparationWorker=null;preparingFiles=false;
+  archiveFile=null;archiveId=null;shareFiles=[];sharedFiles.clear();$('dropboxFiles').open=false;exportStatus('');shareProgress();destinationHint();
+}
+function prepareShareFiles(){
+  if(!result)return;
+  const selected=result,version=preparationVersion;preparingFiles=true;destinationHint();controls();
+  const finish=(files,error)=>{
+    if(version!==preparationVersion||result?.id!==selected.id)return;
+    preparationWorker?.terminate();preparationWorker=null;preparingFiles=false;
+    if(error){exportStatus('共有ファイルを準備できませんでした。録画データを選び直すか、ローカル保存をご利用ください。')}
+    else{shareFiles=files;archiveId=selected.id}
+    destinationHint();controls();
+  };
+  const fallback=()=>setTimeout(()=>{if(version!==preparationVersion)return;try{finish(recordingShareFiles(selected))}catch(error){finish(null,error)}},0);
   try{
-    if(archiveId!==result.id||!shareFiles.length){shareFiles=recordingShareFiles(result);sharedFiles.clear()}
-    if($('saveDestination').value==='local'&&!archiveFile)archiveFile=await recordingArchive(result,progress=>exportStatus(`保存用ZIPを作成中… ${Math.round(progress*100)}%`));
-    archiveId=result.id;destinationHint();shareProgress();
-    exportStatus($('saveDestination').value==='local'?`ZIPの準備ができました（${(archiveFile.size/1024/1024).toFixed(1)} MB）。保存ボタンを押してください。`:'3ファイルを準備しました。Dropboxへ共有するボタンを押してください。');
-  }catch(error){archiveFile=null;archiveId=null;shareFiles=[];exportStatus(`保存用データを準備できませんでした：${error.message} 個別ダウンロードも利用できます。`)}
-  finally{exportBusy=false;controls()}
-};
+    preparationWorker=new Worker(new URL('./export-worker.js',import.meta.url),{type:'module'});
+    preparationWorker.onmessage=({data})=>finish(data.files,data.error);
+    preparationWorker.onerror=event=>{event.preventDefault();if(version!==preparationVersion)return;preparationWorker?.terminate();preparationWorker=null;fallback()};
+    preparationWorker.postMessage(selected);
+  }catch{preparationWorker?.terminate();preparationWorker=null;fallback()}
+}
+try{const saved=localStorage.getItem('road-damage-save-destination');$('saveDestination').value=Object.hasOwn(destinations,saved)?saved:'local';localStorage.setItem('road-damage-save-destination',$('saveDestination').value)}catch{}
+$('saveDestination').onchange=()=>{try{localStorage.setItem('road-damage-save-destination',$('saveDestination').value)}catch{}exportStatus('');destinationHint();controls()};
 function shareError(error){
-  exportStatus(error.name==='AbortError'?'共有が中止されました。Dropboxが共有先に表示されない場合は、個別共有を試してください。準備したデータは保持しています。':
-    'ファイルを共有できませんでした。個別共有を試してください。大きな動画も送れない場合はローカルに保存し、Dropboxアプリのアップロードから選択してください。');
+  $('dropboxFiles').open=true;
+  exportStatus(error.name==='AbortError'?'アップロードを中止しました。再試行できます。':'共有できませんでした。個別アップロードかローカル保存をご利用ください。');
 }
 async function sendDropbox(indices){
-  if(archiveId!==result?.id||!shareFiles.length||exportBusy)return;
+  if(archiveId!==result?.id||!shareFiles.length||exportBusy||preparingFiles)return;
   exportBusy=true;controls();
   try{
-    // Preparation happened on the previous click; keep transient activation for Android.
+    // Cached Files keep share() in this button's user activation, including Android.
     await shareRecordingFiles(indices.map(index=>shareFiles[index]));
-    indices.forEach(index=>sharedFiles.add(index));shareProgress();
-    exportStatus('共有先にファイルを渡しました。保存・アップロードの完了はDropboxで確認してください。');
-  }catch(error){shareError(error)}
-  finally{exportBusy=false;controls()}
+    indices.forEach(index=>sharedFiles.add(index));shareProgress();exportStatus('Dropboxを共有先に選択し、保存を完了してください。');
+  }catch(error){shareError(error)}finally{exportBusy=false;controls()}
 }
 $('saveArchive').onclick=async()=>{
   if($('saveDestination').value==='dropbox'){await sendDropbox([0,1,2]);return}
-  if(!archiveFile||archiveId!==result?.id||exportBusy)return;
+  if(!result||exportBusy||isRecording())return;
   exportBusy=true;controls();
   try{
-    const outcome=await saveArchive(archiveFile,'local',save);
-    exportStatus(outcome==='saved'?'指定した場所に保存しました。':'ダウンロードを開始しました。端末のファイルをご確認ください。');
-  }catch(error){exportStatus(error.name==='AbortError'?'保存をキャンセルしました。ZIPは再度保存できます。':'保存できませんでした。再試行するか、個別ダウンロードをご利用ください。')}
+    const selected=result;
+    const outcome=await savePreparedArchive(`road_damage_${selected.id}.zip`,async()=>{
+      if(!archiveFile)archiveFile=await recordingArchive(selected,progress=>exportStatus(`保存中… ${Math.round(progress*100)}%`));
+      return archiveFile;
+    },save);
+    exportStatus(outcome==='saved'?'保存しました。':'ダウンロードを開始しました。');
+  }catch(error){exportStatus(error.name==='AbortError'?'保存をキャンセルしました。':'保存できませんでした。再試行するか、個別ダウンロードをご利用ください。')}
   finally{exportBusy=false;controls()}
 };
 ['shareVideo','shareGps','shareMetadata'].forEach((id,index)=>$(id).onclick=()=>sendDropbox([index]));
@@ -279,21 +290,31 @@ $('prepareBtn').onclick=prepareCamera;$('recordBtn').onclick=toggleRecord;
 $('recordAudio').onchange=()=>{if(cameraReady)prepareCamera()};
 $('switchBtn').onclick=()=>{facingMode=facingMode==='environment'?'user':'environment';prepareCamera()};
 $('clearTrackBtn').onclick=()=>{if(isRecording())return;gpsLog=latestGps?[latestGps]:[];drawLiveTrack();$('pointCount').textContent=gpsLog.length};
-$('recordingSelect').onchange=controls;
-$('openRecording').onclick=async()=>{
-  if(unsaved&&!confirm('未保存の記録があります。別の動画を開きますか？'))return;
-  libraryBusy=true;controls();
-  try{const record=await getRecording($('recordingSelect').value);if(!record)throw new Error();result=record;unsaved=false;showReview();libraryStatus('選択した動画と位置情報を表示しています。')}
-  catch{libraryStatus('録画を開けませんでした。再読み込みして試してください。')}
-  finally{libraryBusy=false;controls()}
+function clearSelectedRecording(){
+  playback.pause();playback.removeAttribute('src');playback.load();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
+  playbackUrl=null;result=null;unsaved=false;resetArchive();$('reviewPanel').hidden=true;$('recordingSummary').textContent='動画を選択してください';controls();
+}
+$('recordingSelect').onchange=async()=>{
+  const id=$('recordingSelect').value,previous=result?.id||'';
+  if(unsaved&&!confirm('未保存の記録があります。別の動画を開きますか？')){$('recordingSelect').value=previous;return}
+  const version=++selectionVersion;
+  if(!id){libraryBusy=false;clearSelectedRecording();libraryStatus('');return}
+  libraryBusy=true;controls();libraryStatus('読み込み中…');
+  try{const record=await getRecording(id);if(version!==selectionVersion)return;if(!record)throw new Error();result=record;unsaved=false;showReview();libraryStatus('')}
+  catch{if(version===selectionVersion){$('recordingSelect').value=previous;libraryStatus('録画を開けませんでした。もう一度選択してください。')}}
+  finally{if(version===selectionVersion){libraryBusy=false;controls()}}
 };
 $('deleteRecording').onclick=async()=>{
   const id=$('recordingSelect').value;if(!id||!confirm('選択した録画と位置情報をこのブラウザから削除しますか？この操作は取り消せません。'))return;
   libraryBusy=true;controls();
-  try{await deleteRecording(id);if(result?.id===id){playback.pause();playback.removeAttribute('src');playback.load();URL.revokeObjectURL(playbackUrl);playbackUrl=null;result=null;unsaved=false;resetArchive();$('reviewPanel').hidden=true;$('recordingSummary').textContent='動画を選択してください'}await refreshLibrary();libraryStatus('録画を削除しました。')}
+  try{await deleteRecording(id);if(result?.id===id)clearSelectedRecording();await refreshLibrary();libraryStatus('録画を削除しました。')}
   catch{libraryStatus('削除できませんでした。再試行してください。')}
   finally{libraryBusy=false;controls()}
 };
+$('reviewLink').onclick=event=>{if(!result)event.preventDefault()};
+$('playbackSpeed').onchange=()=>{playback.playbackRate=Number($('playbackSpeed').value)};
+function skip(seconds){if(!result)return;const duration=Number.isFinite(playback.duration)?playback.duration:result.duration;playback.currentTime=Math.max(0,Math.min(duration,playback.currentTime+seconds));updatePlaybackPosition()}
+$('skipBack').onclick=()=>skip(-5);$('skipForward').onclick=()=>skip(5);
 $('importForm').onsubmit=importRecording;
 $('downloadVideo').onclick=()=>save(result.video,`${basename()}.${result.ext}`);
 $('downloadGps').onclick=()=>save(new Blob([makeCsv(result.points)],{type:'text/csv;charset=utf-8'}),`${basename()}_gps.csv`);

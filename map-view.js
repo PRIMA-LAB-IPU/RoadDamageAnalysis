@@ -10,7 +10,7 @@ export class TrackMap {
     this.minus=document.getElementById(`${prefix}ZoomOut`);
     this.points=[];this.center=null;this.zoom=17;this.failed=new Set();this.map=null;this.zooming=false;
     this.plus.onclick=()=>this.changeZoom(1);this.minus.onclick=()=>this.changeZoom(-1);
-    this.retry.onclick=()=>{this.failed.clear();this.note.textContent='地図を再取得しています…';this.tiles?.redraw()};
+    this.retry.onclick=()=>{this.failed.clear();this.setNote('地図を再取得しています…');this.tiles?.redraw()};
     this.element.addEventListener('keydown',event=>{
       if(['+','=','-'].includes(event.key)){event.preventDefault();this.changeZoom(event.key==='-'?-1:1)}
     });
@@ -51,16 +51,17 @@ export class TrackMap {
     this.tiles.on('tileerror',e=>{this.failed.add(key(e));this.tileStatus()});
     this.tiles.on('tileload',e=>{if(!e.tile.src.endsWith('/tile-unavailable.svg'))this.failed.delete(key(e));this.tileStatus()});
     this.tiles.on('tileunload',e=>{this.failed.delete(key(e));this.tileStatus()});
-    this.tiles.on('loading',()=>{clearTimeout(this.loadingTimer);this.loadingTimer=setTimeout(()=>{this.note.textContent='地図の取得に時間がかかっています。軌跡と位置は引き続き表示します。';this.retry.hidden=false},12000)});
+    this.tiles.on('loading',()=>{clearTimeout(this.loadingTimer);this.loadingTimer=setTimeout(()=>{this.setNote('地図の取得に時間がかかっています。軌跡と位置は引き続き表示します。');this.retry.hidden=false},12000)});
     this.tiles.on('load',()=>{clearTimeout(this.loadingTimer);this.tileStatus()});
     this.map.on('zoomstart',()=>{this.zooming=true});
     this.map.on('zoomend',()=>{this.zooming=false;this.zoom=this.map.getZoom();this.zoomButtons();this.follow()});
     this.tiles.addTo(this.map);this.canvas.hidden=true;this.renderRoute();
     this.map.invalidateSize({pan:false,animate:false});
   }
+  setNote(message){this.note.textContent=message;this.note.hidden=!message}
   tileStatus(){
     this.retry.hidden=!this.failed.size;
-    this.note.textContent=this.failed.size?'地図の一部を取得できません。斜線部分でも軌跡・現在位置は表示します。':'現在位置を中央に表示します。＋／− または2本指で拡大・縮小できます。';
+    this.setNote(this.failed.size?'地図の一部を取得できません。軌跡・現在位置は表示しています。':'');
   }
   setRoute(points){this.points=points;this.renderRoute();if(!this.map)this.drawFallback()}
   renderRoute(){
@@ -78,7 +79,7 @@ export class TrackMap {
       if(wasHidden)this.map.invalidateSize({pan:false,animate:false});
       if(!this.map.hasLayer(this.marker))this.marker.addTo(this.map);
       this.marker.setLatLng([this.center.latitude,this.center.longitude]);this.follow();
-    }else{this.element.hidden=true;this.canvas.hidden=false;this.note.textContent='相対軌跡を表示しています。北が上です。＋／− または2本指で拡大・縮小できます。';this.drawFallback()}
+    }else{this.element.hidden=true;this.canvas.hidden=false;this.setNote('地図を取得できないため相対軌跡を表示しています。');this.drawFallback()}
   }
   follow(){
     if(!this.map||!this.center||this.zooming)return;

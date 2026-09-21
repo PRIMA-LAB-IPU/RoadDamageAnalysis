@@ -39,6 +39,10 @@
     .save-options{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.save-options label{display:grid;gap:8px;flex:1;min-width:210px;font-size:.8rem;color:var(--muted)}.save-options .button{padding:10px 14px}.individual-exports{margin-top:16px}
     @media(max-width:760px){.review-grid{grid-template-columns:1fr}.review-grid>video{min-height:220px}.map-viewport{height:280px}}
     @media(max-width:500px){.topbar{grid-template-columns:auto 1fr;gap:10px}.brand-logo{width:52px;height:52px}.topbar h1{font-size:1.25rem}.save-options label{flex-basis:100%}.save-options .button{flex:1}}
+    .section-nav{display:flex;gap:6px;position:sticky;top:0;z-index:800;padding:10px 0;margin-bottom:14px;background:#061018ed;backdrop-filter:blur(12px)}.section-nav a{flex:1;min-height:44px;display:grid;place-items:center;text-decoration:none;color:var(--muted);font-size:.83rem;border:1px solid var(--line);border-radius:12px;background:#0c1c26}.section-nav a:hover,.section-nav a:focus-visible{color:var(--cyan);border-color:var(--cyan)}.section-nav a[aria-disabled=true]{opacity:.4;pointer-events:none}
+    section[id]{scroll-margin-top:78px}.playback-column{min-width:0}.playback-column video{display:block;width:100%;aspect-ratio:16/10;min-height:240px;object-fit:contain;background:#03090d;border-radius:14px}.playback-tools{display:flex;align-items:center;gap:8px;margin-top:10px}.playback-tools button{min-width:60px;min-height:44px;padding:8px}.playback-tools label{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.75rem}.playback-tools select{width:76px;min-height:44px;padding:6px}
+    .save-options #saveArchive{min-width:144px}.library-tools label{min-width:0;flex-basis:70%}.library-tools #deleteRecording{min-width:68px;color:#f8a0aa;padding:8px}.notice:empty{display:none}.panel-head>span{overflow-wrap:anywhere;max-width:100%}.section-nav a:focus-visible,select:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+    @media(max-width:420px){.section-nav a{font-size:.76rem}.library-tools>label{flex-basis:60%}.library-tools>#deleteRecording{flex:0}.playback-column video{min-height:210px}}
   </style>
   <title>Road Damage Analysis</title>
 </head>
@@ -47,12 +51,13 @@
     <header class="topbar">
       <img class="brand-logo" src="./logo.png" alt="PRIMA LABORATORY 岩手県立大学 ソフトウェア情報学部" width="64" height="64">
       <div>
-        <p class="eyebrow">FIELD CAPTURE</p>
+        <p class="eyebrow">Prima Laboratory</p>
         <h1>Road Damage Analysis</h1>
       </div>
     </header>
+    <nav class="section-nav" aria-label="画面内ナビゲーション"><a href="#capturePanel">撮影</a><a href="#recordedPanel">録画データ</a><a href="#reviewPanel" id="reviewLink" aria-disabled="true">再生</a><a href="#exportPanel">保存</a></nav>
 
-    <section class="capture-card" aria-label="撮影画面">
+    <section id="capturePanel" class="capture-card" aria-label="撮影画面">
       <div class="video-wrap">
         <video id="preview" autoplay muted playsinline></video>
         <div class="video-shade"></div>
@@ -100,20 +105,19 @@
             <div id="liveMap" class="map-surface" aria-label="移動軌跡の地図" tabindex="0" hidden></div>
           </div>
           <div class="map-toolbar"><span>現在位置に追従</span><div class="zoom-buttons" role="group" aria-label="移動軌跡の拡大縮小"><button id="liveZoomOut" type="button" aria-label="移動軌跡を縮小">−</button><button id="liveZoomIn" type="button" aria-label="移動軌跡を拡大">＋</button></div></div>
-          <p id="liveNote" class="map-note">＋／− または2本指で拡大・縮小できます。</p>
+          <p id="liveNote" class="map-note" role="status" hidden></p>
           <button id="liveRetry" type="button" class="text-button" hidden>地図を再取得</button>
         </div>
       </article>
     </section>
 
-    <section class="panel library-panel" aria-labelledby="libraryTitle">
-      <div class="panel-head"><div><p class="eyebrow">RECORDING LIBRARY</p><h2 id="libraryTitle">録画ライブラリ</h2></div><span id="libraryCount">読み込み中…</span></div>
+    <section id="recordedPanel" class="panel library-panel" aria-labelledby="libraryTitle">
+      <div class="panel-head"><div><p class="eyebrow">Recorded Data</p><h2 id="libraryTitle">録画データ</h2></div><span id="libraryCount">読み込み中…</span></div>
       <div class="library-tools">
         <label for="recordingSelect">保存済みの動画<select id="recordingSelect"><option value="">動画を選択してください</option></select></label>
-        <button id="openRecording" class="button secondary" disabled>再生・軌跡を表示</button>
         <button id="deleteRecording" class="button" disabled>削除</button>
       </div>
-      <p id="libraryStatus" class="notice" role="status">このブラウザに保存された録画を表示します。</p>
+      <p id="libraryStatus" class="notice" role="status" hidden></p>
       <details class="import-form"><summary>過去の動画・位置情報を読み込む</summary>
         <form id="importForm">
           <div class="library-tools">
@@ -121,34 +125,51 @@
             <label for="importLog">同じ動画の位置情報（任意）<input id="importLog" type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain"></label>
             <button id="importBtn" class="button secondary" type="submit">読み込んで保存</button>
           </div>
-          <p class="notice">このアプリで書き出した metadata.json / metadata.json.txt または gps.csv を選択してください。位置情報がない動画も再生できます。</p>
         </form>
       </details>
-      <p class="privacy-note">ブラウザのデータ消去で履歴も削除されます。大切な記録は動画と位置情報をダウンロードしてください。</p>
     </section>
 
+    <section class="panel review-panel" id="reviewPanel" hidden>
+      <div class="panel-head">
+        <div><p class="eyebrow">Playback</p><h2>データの再生</h2></div>
+        <span id="reviewPosition">00:00 / 00:00</span>
+      </div>
+      <div class="review-grid">
+        <div class="playback-column"><video id="playback" controls playsinline preload="metadata"></video>
+          <div class="playback-tools"><button id="skipBack" class="button" aria-label="5秒戻る">−5秒</button><button id="skipForward" class="button" aria-label="5秒進む">＋5秒</button><label>速度<select id="playbackSpeed" aria-label="再生速度"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label></div>
+        </div>
+        <div class="map-column">
+          <div class="map-viewport" id="routeViewport">
+            <canvas id="routeFallback" class="map-fallback" aria-label="再生軌跡の相対軌跡"></canvas>
+            <div id="routeMap" class="map-surface" aria-label="再生軌跡の地図" tabindex="0" hidden></div>
+          </div>
+          <div class="map-toolbar"><span>現在位置に追従</span><div class="zoom-buttons" role="group" aria-label="再生軌跡の拡大縮小"><button id="routeZoomOut" type="button" aria-label="再生軌跡を縮小">−</button><button id="routeZoomIn" type="button" aria-label="再生軌跡を拡大">＋</button></div></div>
+          <p id="routeNote" class="map-note" role="status" hidden></p>
+          <button id="routeRetry" type="button" class="text-button" hidden>地図を再取得</button>
+        </div>
+      </div>
+      <div class="map-readout" aria-label="再生時刻と位置情報"><div><span>動画時間</span><b id="mapTime">00:00:00.000</b></div><div><span>緯度・経度 / GPS精度</span><b id="mapCoordinates">位置情報なし</b></div></div>
+    </section>
     <section class="panel export-panel" id="exportPanel">
       <div class="panel-head">
-        <div><p class="eyebrow">SELECTED RECORDING</p><h2>記録データ</h2></div>
+        <div><p class="eyebrow">Repository</p><h2>データの保存</h2></div>
         <span id="recordingSummary">まだ記録がありません</span>
       </div>
       <div class="save-options">
         <label for="saveDestination">保存先<select id="saveDestination"><option value="local">ローカル（このデバイス）</option><option value="dropbox">Dropbox</option></select></label>
-        <button id="prepareArchive" class="button" disabled>保存用データを準備</button>
-        <button id="saveArchive" class="button secondary" disabled>このデバイスに保存</button>
+        <button id="saveArchive" class="button secondary" disabled>保存</button>
       </div>
-      <p id="saveHint" class="notice">動画・GPS・フレーム対応表を1つのZIPにまとめて保存します。</p>
+      <p id="saveHint" class="notice">ZIP · 動画と位置情報</p>
       <p id="saveStatus" class="notice" role="status" hidden></p>
-      <div id="dropboxFiles" hidden>
+      <details id="dropboxFiles" class="individual-exports" hidden><summary>個別にアップロード</summary>
         <p class="notice">Dropboxが共有先に出ない・まとめて送れない場合は、次の3つを個別に共有してください。</p>
         <div class="downloads" role="group" aria-label="Dropboxへファイルを個別に共有">
           <button id="shareVideo" class="button" disabled>動画を共有</button>
           <button id="shareGps" class="button" disabled>GPSログを共有</button>
           <button id="shareMetadata" class="button" disabled>フレーム対応表を共有</button>
         </div>
-        <p id="shareProgress" class="notice" role="status"></p>
-      </div>
-      <p class="privacy-note">録画はまずこのブラウザのライブラリに保存します。Dropboxへはデータを準備後、共有画面でDropboxを選んで保存を完了してください。</p>
+        <p id="shareProgress" class="notice" role="status" hidden></p>
+      </details>
       <details class="individual-exports"><summary>個別のファイルをダウンロード</summary>
       <div class="downloads">
         <button id="downloadVideo" class="download-card" disabled><b>動画</b><span id="videoFileLabel">video.webm / .mp4</span></button>
@@ -156,28 +177,8 @@
         <button id="downloadMeta" class="download-card" disabled><b>フレーム対応表</b><span>metadata.json</span></button>
       </div>
       </details>
-      <p class="privacy-note">動画・GPSは選択した共有先へ渡すまで端末内で処理します。地図の取得時には表示範囲が地図サービスに送信されます。</p>
     </section>
 
-    <section class="panel review-panel" id="reviewPanel" hidden>
-      <div class="panel-head">
-        <div><p class="eyebrow">SYNCHRONIZED REVIEW</p><h2>動画と走行軌跡</h2></div>
-        <span id="reviewPosition">00:00 / 00:00</span>
-      </div>
-      <div class="review-grid">
-        <video id="playback" controls playsinline preload="metadata"></video>
-        <div class="map-column">
-          <div class="map-viewport" id="routeViewport">
-            <canvas id="routeFallback" class="map-fallback" aria-label="再生軌跡の相対軌跡"></canvas>
-            <div id="routeMap" class="map-surface" aria-label="再生軌跡の地図" tabindex="0" hidden></div>
-          </div>
-          <div class="map-toolbar"><span>現在位置に追従</span><div class="zoom-buttons" role="group" aria-label="再生軌跡の拡大縮小"><button id="routeZoomOut" type="button" aria-label="再生軌跡を縮小">−</button><button id="routeZoomIn" type="button" aria-label="再生軌跡を拡大">＋</button></div></div>
-          <p id="routeNote" class="map-note">＋／− または2本指で拡大・縮小できます。</p>
-          <button id="routeRetry" type="button" class="text-button" hidden>地図を再取得</button>
-        </div>
-      </div>
-      <div class="map-readout" aria-label="再生時刻と位置情報"><div><span>動画時間</span><b id="mapTime">00:00:00.000</b></div><div><span>緯度・経度 / GPS精度</span><b id="mapCoordinates">位置情報なし</b></div></div>
-    </section>
   </main>
   <script src="./vendor/leaflet/leaflet.js"></script>
   <script type="module" src="./app.js"></script>

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {crc32,makeZip,recordingArchive,saveArchive,recordingShareFiles,shareRecordingFiles,supportsFileShare} from '../export.js';
+import {crc32,makeZip,recordingArchive,saveArchive,recordingShareFiles,shareRecordingFiles,supportsFileShare,savePreparedArchive} from '../export.js';
 import {parseLog} from '../core.js';
 
 test('ZIP CRC matches the standard check value',()=>assert.equal((crc32(new TextEncoder().encode('123456789'))^0xffffffff)>>>0,0xcbf43926));
@@ -74,3 +74,18 @@ test('failed transfer propagates without reporting shared or downloading',async(
   try{await assert.rejects(()=>shareRecordingFiles(recordingShareFiles(recording)),{name:'DataError'})}finally{Object.defineProperty(globalThis,'navigator',previous)}
 });
 test('removed destinations are rejected',async()=>assert.rejects(()=>saveArchive(new File(['x'],'x.zip'),'removed',()=>assert.fail()),/保存先が無効/));
+
+test('one-click local save opens picker before asynchronous ZIP preparation',async()=>{
+  const previous=globalThis.window,calls=[];
+  globalThis.window={showSaveFilePicker:async()=>{calls.push('picker');return {createWritable:async()=>({write:async()=>calls.push('write'),close:async()=>calls.push('close')})}}};
+  try{assert.equal(await savePreparedArchive('x.zip',async()=>{calls.push('prepare');return new File(['zip'],'x.zip')},()=>assert.fail()),'saved');assert.deepEqual(calls,['picker','prepare','write','close'])}finally{globalThis.window=previous}
+});
+test('cancelling picker does not generate a ZIP or download',async()=>{
+  const previous=globalThis.window;
+  globalThis.window={showSaveFilePicker:async()=>{throw new DOMException('cancel','AbortError')}};
+  try{await assert.rejects(()=>savePreparedArchive('x.zip',()=>assert.fail(),()=>assert.fail()),{name:'AbortError'})}finally{globalThis.window=previous}
+});
+test('one-click local save without picker prepares then downloads',async()=>{
+  const previous=globalThis.window,calls=[];globalThis.window={};
+  try{assert.equal(await savePreparedArchive('x.zip',async()=>{calls.push('prepare');return new File(['zip'],'x.zip')},file=>calls.push(file.name)),'downloaded');assert.deepEqual(calls,['prepare','x.zip'])}finally{globalThis.window=previous}
+});
