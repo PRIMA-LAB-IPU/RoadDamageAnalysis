@@ -1,25 +1,31 @@
 import {positionAt, normalizePoints, interpolateFrames, makeCsv, parseLog} from './core.js';
 import {listRecordings, getRecording, putRecording, deleteRecording} from './storage.js';
+import {TrackMap} from './map-view.js';
+import {recordingArchive,recordingMetadata,saveArchive,supportsFileShare} from './export.js';
 
 const $=id=>document.getElementById(id);
 const preview=$('preview'), playback=$('playback');
 let stream=null, recorder=null, watchId=null, gpsGranted=false, cameraReady=false, preparing=false, saving=false, libraryBusy=false;
 let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null, chunks=[], bytes=0;
 let startedAt=0, startedMono=0, stoppedMono=0, timerId, wakeLock=null, recordingProblem='';
-let result=null, unsaved=false, playbackUrl=null, routeMap=null, routeLine=null, routeMarker=null, tiles=null, mapAvailable=false;
+let result=null, unsaved=false, playbackUrl=null;
+const liveMap=new TrackMap('live'), reviewMap=new TrackMap('route');
+let archiveFile=null,archiveId=null,exportBusy=false;
 let animationId=null;
 const fmt=seconds=>{
   const n=Math.max(0,Math.floor(Number.isFinite(seconds)?seconds:0));
   return [Math.floor(n/3600),Math.floor(n%3600/60),n%60].map(v=>String(v).padStart(2,'0')).join(':');
 };
 const isRecording=()=>recorder?.state==='recording';
-function status(message,error=false){$('status').textContent=message;$('status').style.color=error?'#ff9ca7':''}
+function status(message,error=false){$('status').hidden=!message;$('status').textContent=message;$('status').style.color=error?'#ff9ca7':''}
 function libraryStatus(message){$('libraryStatus').textContent=message}
 function controls(){
-  const busy=isRecording()||saving||preparing||libraryBusy;
+  const busy=isRecording()||saving||preparing||libraryBusy||exportBusy;
   $('prepareBtn').disabled=busy;
-  $('prepareBtn').textContent=preparing?'許可を確認中…':cameraReady&&gpsGranted?'位置情報・カメラ許可中':'カメラとGPSを許可';
-  $('recordBtn').disabled=preparing||saving||libraryBusy||(!isRecording()&&(!cameraReady||!gpsGranted||!window.MediaRecorder));
+  const permissionLabel=preparing?'許可を確認中…':cameraReady&&gpsGranted?'位置情報・カメラ許可中':'カメラとGPSを許可';
+  $('prepareBtn').setAttribute('aria-label',permissionLabel);$('prepareBtn').title=permissionLabel;$('prepareBtn').setAttribute('aria-busy',String(preparing));
+  $('cameraPermission').classList.toggle('granted',cameraReady);$('gpsPermission').classList.toggle('granted',gpsGranted);
+  $('recordBtn').disabled=preparing||saving||libraryBusy||exportBusy||(!isRecording()&&(!cameraReady||!gpsGranted||!window.MediaRecorder));
   $('switchBtn').disabled=busy||!cameraReady;
   $('recordAudio').disabled=busy;
   $('clearTrackBtn').disabled=isRecording()||saving;
@@ -27,7 +33,8 @@ function controls(){
   $('openRecording').disabled=busy||libraryBusy||!$('recordingSelect').value;
   $('deleteRecording').disabled=busy||libraryBusy||!$('recordingSelect').value;
   $('importBtn').disabled=busy||libraryBusy;
-  ['downloadVideo','downloadGps','downloadMeta'].forEach(id=>$(id).disabled=!result||saving||isRecording());
+  ['downloadVideo','downloadGps','downloadMeta'].forEach(id=>$(id).disabled=!result||saving||isRecording()||exportBusy);
+  $('prepareArchive').disabled=!result||busy;$('saveArchive').disabled=!archiveFile||archiveId!==result?.id||busy;$('saveDestination').disabled=busy;
 }
 
 async function prepareCamera(){
@@ -146,71 +153,30 @@ async function refreshLibrary(selected=$('recordingSelect').value){
 }
 
 function showReview(){
-  playback.pause();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
+  resetArchive();playback.pause();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
   playbackUrl=URL.createObjectURL(result.video);playback.src=playbackUrl;playback.load();
   $('reviewPanel').hidden=false;$('recordingSummary').textContent=`${result.name} · ${fmt(result.duration)} · GPS ${result.points.length}点`;
   $('videoFileLabel').textContent=`video.${result.ext}`;
-  requestAnimationFrame(()=>{initMap();renderRoute();updatePlaybackPosition();$('reviewPanel').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'})});
+  requestAnimationFrame(()=>{reviewMap.setRoute(result.points);updatePlaybackPosition();$('reviewPanel').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'})});
   controls();
 }
 
-function initMap(){
-  if(routeMap){routeMap.invalidateSize();return}
-  if(!window.L){$('routeMap').hidden=true;return}
-  routeMap=L.map('routeMap',{dragging:false,touchZoom:false,scrollWheelZoom:false,doubleClickZoom:false,boxZoom:false,keyboard:false}).setView([0,0],17);
-  tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'});
-  tiles.on('tileerror',()=>{mapAvailable=false;$('routeMap').style.opacity='0';$('routeMap').style.pointerEvents='none';$('reviewNote').textContent='地図を取得できないため、現在位置を中央にした相対軌跡を表示しています。北が上です。'});
-  tiles.on('tileload',()=>{mapAvailable=true;$('routeMap').style.opacity='';$('routeMap').style.pointerEvents='';$('reviewNote').textContent='再生位置に合わせて推定位置を中央に表示します。地図のズームは＋／−で変更できます。'});
-  tiles.addTo(routeMap);
-  routeMarker=L.marker([0,0],{interactive:false,icon:L.divIcon({className:'',html:'<div class="route-marker"></div>',iconSize:[22,22],iconAnchor:[11,11]})});
-  routeMap.on('zoomend',updatePlaybackPosition);
-}
-function renderRoute(){
-  if(!routeMap)return;
-  routeLine?.remove();routeMarker?.remove();
-  // Preserve gaps in imported logs instead of connecting through unknown positions.
-  const segments=[];let segment=[];
-  for(const p of result.points){if(p.latitude==null){if(segment.length)segments.push(segment);segment=[]}else segment.push([p.latitude,p.longitude])}
-  if(segment.length)segments.push(segment);
-  routeLine=L.polyline(segments,{color:'#2de0cf',weight:4,opacity:.9}).addTo(routeMap);
-}
 function updatePlaybackPosition(time=playback.currentTime||0){
   if(typeof time!=='number')time=playback.currentTime||0;
   if(!result)return;
   const duration=Number.isFinite(playback.duration)?playback.duration:result.duration;
   $('reviewPosition').textContent=`${fmt(time)} / ${fmt(duration)}`;$('mapTime').textContent=`${fmt(time)}.${String(Math.floor(time%1*1000)).padStart(3,'0')}`;
   const point=positionAt(result.points,time);
-  if(!point||point.latitude==null){routeMarker?.remove();$('routeMap').hidden=true;$('mapCoordinates').textContent='この時刻の位置情報なし';drawTrack($('routeFallback'),[],null);return}
-  $('routeMap').hidden=!routeMap;
-  if(routeMap){routeMap.invalidateSize();routeMarker.setLatLng([point.latitude,point.longitude]);if(!routeMap.hasLayer(routeMarker))routeMarker.addTo(routeMap);routeMap.setView([point.latitude,point.longitude],routeMap.getZoom(),{animate:false})}
+  reviewMap.setPosition(point);
+  if(!point||point.latitude==null){$('mapCoordinates').textContent='この時刻の位置情報なし';return}
   $('mapCoordinates').textContent=`${point.latitude.toFixed(6)}, ${point.longitude.toFixed(6)}${point.accuracy==null?'':` ±${point.accuracy.toFixed(1)} m`}`;
-  if(!mapAvailable||!routeMap)drawTrack($('routeFallback'),result.points,point);
 }
 function playbackLoop(){
   updatePlaybackPosition();
   if(!playback.paused&&!playback.ended)animationId=requestAnimationFrame(playbackLoop);
 }
 
-function drawTrack(canvas,points,center){
-  const ctx=canvas.getContext('2d'),dpr=devicePixelRatio||1,w=canvas.clientWidth||800,h=canvas.clientHeight||360;
-  if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}
-  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);ctx.fillStyle='#071219';ctx.fillRect(0,0,w,h);
-  ctx.strokeStyle='#19313d';ctx.lineWidth=1;
-  for(let x=w/2%40;x<w;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
-  for(let y=h/2%40;y<h;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
-  ctx.fillStyle='#91a9b4';ctx.font='12px system-ui';ctx.fillText('N ↑',12,22);
-  if(!center){ctx.fillText('位置情報を待っています',Math.max(12,w/2-65),h/2);return}
-  const cos=Math.max(.01,Math.cos(center.latitude*Math.PI/180));
-  const xy=p=>[(((p.longitude-center.longitude+540)%360)-180)*111320*cos,(p.latitude-center.latitude)*111320];
-  let maxX=25,maxY=25;
-  for(const p of points){if(p.latitude==null)continue;const [x,y]=xy(p);maxX=Math.max(maxX,Math.abs(x));maxY=Math.max(maxY,Math.abs(y))}
-  const scale=Math.min((w/2-24)/maxX,(h/2-24)/maxY);
-  ctx.beginPath();let pen=false;
-  for(const p of points){if(p.latitude==null){pen=false;continue}const [x,y]=xy(p);if(pen)ctx.lineTo(w/2+x*scale,h/2-y*scale);else ctx.moveTo(w/2+x*scale,h/2-y*scale);pen=true}
-  ctx.strokeStyle='#2de0cf';ctx.lineWidth=3;ctx.lineJoin='round';ctx.stroke();
-  ctx.fillStyle='#ffc857';ctx.beginPath();ctx.arc(w/2,h/2,6,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.stroke();
-}
-function drawLiveTrack(){const points=isRecording()?sessionGps:gpsLog;drawTrack($('trackCanvas'),points,points.at(-1))}
+function drawLiveTrack(){const points=isRecording()?sessionGps:gpsLog;liveMap.setRoute(points);liveMap.setPosition(points.at(-1))}
 
 async function importRecording(event){
   event.preventDefault();if(libraryBusy||isRecording()||saving)return;
@@ -244,7 +210,42 @@ function videoDuration(file){
   });
 }
 function save(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
-function basename(){return `geoframe_${result.id}`}
+function basename(){return `road_damage_${result.id}`}
+
+const destinations={local:'このデバイス',dropbox:'Dropbox',onedrive:'OneDrive',gdrive:'Google Drive'};
+function exportStatus(message){$('saveStatus').hidden=!message;$('saveStatus').textContent=message}
+function destinationHint(){
+  const destination=$('saveDestination').value,name=destinations[destination];
+  $('saveArchive').textContent=destination==='local'?'このデバイスに保存':archiveFile&&!supportsFileShare(archiveFile)?'ZIPをダウンロード':`${name}へ共有`;
+  $('saveHint').textContent=destination==='local'?'動画・GPS・フレーム対応表を1つのZIPにまとめて保存します。':
+    archiveFile&&!supportsFileShare(archiveFile)?`このブラウザはZIPの共有に対応していません。ダウンロード後、${name}アプリからアップロードしてください。`:
+    `共有画面で${name}を選んで保存してください。アプリのインストール・ログインが必要です。表示されない場合は「ファイルに保存」またはZIPのダウンロードをご利用ください。`;
+}
+function resetArchive(){archiveFile=null;archiveId=null;exportStatus('');destinationHint()}
+try{const saved=localStorage.getItem('road-damage-save-destination');if(saved in destinations)$('saveDestination').value=saved}catch{}
+$('saveDestination').onchange=()=>{try{localStorage.setItem('road-damage-save-destination',$('saveDestination').value)}catch{}exportStatus('');destinationHint()};
+$('prepareArchive').onclick=async()=>{
+  if(!result||exportBusy||isRecording())return;
+  exportBusy=true;controls();exportStatus('動画と位置情報をまとめています…');
+  try{archiveFile=await recordingArchive(result,progress=>exportStatus(`保存用ZIPを作成中… ${Math.round(progress*100)}%`));archiveId=result.id;destinationHint();exportStatus(`ZIPの準備ができました（${(archiveFile.size/1024/1024).toFixed(1)} MB）。保存ボタンを押してください。`)}
+  catch(error){archiveFile=null;archiveId=null;exportStatus(`ZIPを作成できませんでした：${error.message} 個別ダウンロードも利用できます。`)}
+  finally{exportBusy=false;controls()}
+};
+$('saveArchive').onclick=async()=>{
+  if(!archiveFile||archiveId!==result?.id||exportBusy)return;
+  const destination=$('saveDestination').value;
+  exportBusy=true;controls();
+  try{
+    // Invoke the picker/share directly from this click, after ZIP preparation.
+    const outcome=await saveArchive(archiveFile,destination,save);
+    const messages={saved:'指定した場所に保存しました。',downloaded:'ダウンロードを開始しました。端末のファイルをご確認ください。',
+      shared:'共有先にファイルを渡しました。保存・アップロードの完了は共有先アプリで確認してください。',
+      'manual-upload':`ZIPのダウンロードを開始しました。${destinations[destination]}アプリからこのZIPをアップロードしてください。`};
+    exportStatus(messages[outcome]);
+  }catch(error){exportStatus(error.name==='AbortError'?'保存・共有をキャンセルしました。ZIPは再度保存できます。':'保存・共有できませんでした。再試行するか、ローカル保存からZIPをダウンロードしてください。')}
+  finally{exportBusy=false;controls()}
+};
+destinationHint();
 
 $('prepareBtn').onclick=prepareCamera;$('recordBtn').onclick=toggleRecord;
 $('recordAudio').onchange=()=>{if(cameraReady)prepareCamera()};
@@ -261,7 +262,7 @@ $('openRecording').onclick=async()=>{
 $('deleteRecording').onclick=async()=>{
   const id=$('recordingSelect').value;if(!id||!confirm('選択した録画と位置情報をこのブラウザから削除しますか？この操作は取り消せません。'))return;
   libraryBusy=true;controls();
-  try{await deleteRecording(id);if(result?.id===id){playback.pause();playback.removeAttribute('src');playback.load();URL.revokeObjectURL(playbackUrl);playbackUrl=null;result=null;unsaved=false;$('reviewPanel').hidden=true;$('recordingSummary').textContent='動画を選択してください'}await refreshLibrary();libraryStatus('録画を削除しました。')}
+  try{await deleteRecording(id);if(result?.id===id){playback.pause();playback.removeAttribute('src');playback.load();URL.revokeObjectURL(playbackUrl);playbackUrl=null;result=null;unsaved=false;resetArchive();$('reviewPanel').hidden=true;$('recordingSummary').textContent='動画を選択してください'}await refreshLibrary();libraryStatus('録画を削除しました。')}
   catch{libraryStatus('削除できませんでした。再試行してください。')}
   finally{libraryBusy=false;controls()}
 };
@@ -277,7 +278,7 @@ $('downloadMeta').onclick=()=>{
 playback.addEventListener('play',()=>{cancelAnimationFrame(animationId);playbackLoop()});
 playback.addEventListener('pause',()=>{cancelAnimationFrame(animationId);updatePlaybackPosition()});
 playback.addEventListener('error',()=>{if(result)libraryStatus('動画を再生できません。この端末が対応する形式の動画を選択してください。')});
-window.addEventListener('resize',()=>{drawLiveTrack();routeMap?.invalidateSize();updatePlaybackPosition()});
+
 window.addEventListener('beforeunload',e=>{if(isRecording()||saving||unsaved){e.preventDefault();e.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden&&isRecording()){recordingProblem='画面が非表示になったため録画を終了しました。';stopRecording()}

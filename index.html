@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#07141d">
   <meta name="description" content="スマートフォンで動画とGPSを同時記録し、端末へ保存するPWA">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="icon" href="./icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQ3ynhtSkWn2QZjMZ74qjMZ/8w5B+yk=" crossorigin="">
+  <link rel="icon" href="./logo.png" type="image/png">
+  <link rel="apple-touch-icon" href="./logo.png">
+  <link rel="stylesheet" href="./vendor/leaflet/leaflet.css">
   <style>
 :root{color-scheme:dark;--bg:#061018;--panel:#0c1c26;--panel2:#102631;--line:#23404d;--text:#edf8fb;--muted:#91a9b4;--cyan:#2de0cf;--cyan2:#16a89d;--red:#ff5265;--amber:#ffc857;font-family:Inter,"Noto Sans JP",system-ui,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% 0,#103442 0,transparent 34rem),var(--bg);color:var(--text);min-height:100vh}.app-shell{width:min(1100px,100%);margin:auto;padding:24px clamp(16px,4vw,40px) 56px}.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}.eyebrow{font-size:.72rem;letter-spacing:.19em;color:var(--cyan);font-weight:800;margin:0 0 5px}.topbar h1{font-size:clamp(1.35rem,4vw,2rem);margin:0;letter-spacing:-.03em}.badge,.state{font-size:.76rem;border:1px solid var(--line);border-radius:100px;padding:7px 10px;color:var(--muted)}.badge.good,.state.good{color:var(--cyan);border-color:#247d75;background:#0b302f}.badge.bad,.state.bad{color:#ff9ca7;border-color:#713440}.capture-card,.panel{background:linear-gradient(145deg,rgba(17,42,54,.94),rgba(9,25,34,.96));border:1px solid var(--line);border-radius:22px;box-shadow:0 20px 60px #0005;overflow:hidden}.video-wrap{position:relative;aspect-ratio:16/9;background:#020609;min-height:250px}.video-wrap video{width:100%;height:100%;object-fit:cover;display:block}.video-shade{position:absolute;inset:0;background:linear-gradient(transparent 60%,#020609b5);pointer-events:none}.camera-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);text-align:center}.camera-empty strong{color:var(--text)}.camera-empty span{font-size:.85rem}.camera-icon{font-size:2.2rem;color:var(--cyan);border:1px solid var(--line);width:72px;height:72px;display:grid;place-items:center;border-radius:50%;margin-bottom:8px}.rec-indicator{position:absolute;top:16px;left:16px;background:#070b0ddd;border:1px solid #66313a;border-radius:100px;padding:7px 10px;font-size:.75rem;font-weight:900;letter-spacing:.12em}.rec-indicator span{display:inline-block;width:8px;height:8px;background:var(--red);border-radius:50%;margin-right:7px;animation:pulse 1.2s infinite}@keyframes pulse{50%{opacity:.35}}.hud{position:absolute;bottom:14px;left:16px;right:16px;display:flex;gap:22px}.hud div{display:flex;flex-direction:column}.hud span{font-size:.66rem;color:#adc0c8;text-transform:uppercase}.hud b{font-variant-numeric:tabular-nums;font-size:.95rem}.controls{display:grid;grid-template-columns:1fr 82px 1fr;align-items:center;gap:18px;padding:18px}.button{border:1px solid var(--line);background:transparent;color:var(--text);min-height:46px;border-radius:12px;font-size:.9rem;font-weight:700}.button.secondary{background:var(--cyan);color:#03201f;border-color:var(--cyan)}.button:disabled,.download-card:disabled{opacity:.38}.record-button{width:74px;height:74px;border-radius:50%;border:3px solid #c8e8e7;background:transparent;display:grid;place-items:center;margin:auto}.record-button span{width:54px;height:54px;border-radius:50%;background:var(--red);transition:.2s}.record-button.recording span{border-radius:8px;width:28px;height:28px}.status{color:var(--muted);font-size:.85rem;text-align:center;margin:0;padding:0 16px 18px}.data-grid{display:grid;grid-template-columns:.75fr 1.25fr;gap:18px;margin-top:18px}.panel{padding:20px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}.panel h2{font-size:1rem;margin:0}.coordinates{display:grid;grid-template-columns:1fr 1fr;gap:18px 12px;margin:0}.coordinates div{border-left:2px solid var(--line);padding-left:10px}.coordinates dt{font-size:.72rem;color:var(--muted)}.coordinates dd{margin:4px 0 0;font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums}.text-button{border:0;background:none;color:var(--cyan);font-size:.8rem}.track-panel canvas{width:100%;height:180px;border-radius:12px;background:#071219;display:block}.map-note,.privacy-note{font-size:.72rem;color:var(--muted);margin:8px 0 0}.export-panel{margin-top:18px}.export-panel .panel-head>span{font-size:.8rem;color:var(--muted)}.downloads{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.download-card{text-align:left;background:#0a1820;border:1px solid var(--line);border-radius:14px;color:var(--text);padding:14px}.download-card b,.download-card span{display:block}.download-card span{font-size:.72rem;color:var(--muted);margin-top:4px}.download-card:not(:disabled):hover{border-color:var(--cyan);transform:translateY(-1px)}button{cursor:pointer}button:focus-visible{outline:3px solid var(--amber);outline-offset:3px}@media(max-width:700px){.app-shell{padding-top:16px}.data-grid{grid-template-columns:1fr}.video-wrap{aspect-ratio:3/4}.controls{grid-template-columns:1fr 76px 1fr;gap:10px}.button{font-size:.78rem}.downloads{grid-template-columns:1fr}.hud{gap:14px}.badge{font-size:.68rem}.panel{padding:16px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-.review-panel{margin-top:18px}.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.review-grid>video,.map-wrap{width:100%;aspect-ratio:16/10;min-height:280px;border-radius:14px;background:#03090d}.review-grid>video{object-fit:contain}.map-wrap{position:relative;overflow:hidden}.map-wrap #routeMap{position:absolute;inset:0}.map-readout{position:absolute;z-index:500;left:10px;right:10px;bottom:10px;display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border:1px solid #ffffff24;border-radius:10px;background:#061018df;color:var(--text);font-size:.78rem;pointer-events:none}.map-readout b{font-variant-numeric:tabular-nums;color:var(--cyan)}.route-marker{width:22px;height:22px;border:4px solid #fff;border-radius:50%;background:var(--red);box-shadow:0 2px 10px #000a}.leaflet-control-attribution{font-size:10px!important}@media(max-width:760px){.review-grid{grid-template-columns:1fr}.review-grid>video,.map-wrap{min-height:230px}}
-
+.review-panel{margin-top:18px}
     [hidden]{display:none!important}
     .app-shell{padding-bottom:calc(40px + env(safe-area-inset-bottom))}
     .video-wrap video{position:absolute;inset:0}
@@ -26,18 +26,29 @@
     summary{cursor:pointer;color:var(--cyan);padding:8px 0;min-height:44px}
     .import-form .library-tools{margin-top:12px}.notice{font-size:.82rem;line-height:1.7;color:var(--muted)}
     .text-button{min-height:44px}.button,.download-card{touch-action:manipulation}.record-button:disabled{opacity:.35;cursor:not-allowed}
-    .map-wrap canvas{position:absolute;inset:0;width:100%;height:100%}.map-readout{bottom:26px;flex-wrap:wrap}
     .panel-head{flex-wrap:wrap}.panel-head>span{font-size:.8rem;color:var(--muted)}
     @media(max-width:420px){.controls{grid-template-columns:1fr 64px 1fr;gap:8px;padding:14px 10px}.record-button{width:62px;height:62px}.record-button span{width:44px;height:44px}.button{padding:8px;font-size:.75rem;text-wrap:balance}.topbar{gap:8px}.hud{gap:12px}.library-tools>label{flex-basis:100%}.library-tools>.button{flex:1}}
+    .topbar{display:grid;grid-template-columns:auto 1fr auto;gap:14px}.brand-logo{object-fit:contain;border-radius:50%;background:white;padding:3px;width:64px;height:64px}.topbar h1{font-size:clamp(1.15rem,3.8vw,1.8rem);line-height:1.15}.topbar .badge{white-space:nowrap}
+    .permission-button{display:flex;justify-content:center;gap:18px;align-items:center;min-height:52px}.permission-icon{position:relative;display:inline-flex;opacity:.6}.permission-icon svg{width:25px;height:25px}.permission-icon.granted{opacity:1}.permission-check{display:none;position:absolute;right:-7px;bottom:-6px;background:#fff;color:#006d5b;border-radius:50%;width:15px;height:15px;font-size:11px;line-height:15px}.permission-icon.granted .permission-check{display:block}.permission-button[aria-busy=true]{opacity:.6}
+    .review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}.review-grid>video{width:100%;aspect-ratio:16/10;min-height:280px;background:#03090d;border-radius:14px;object-fit:contain}.map-column{min-width:0}
+    .map-viewport{position:relative;width:100%;height:300px;isolation:isolate;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#e9eff0;color-scheme:light}
+    .map-surface,.map-fallback{position:absolute;inset:0;width:100%;height:100%;border-radius:0}.map-surface{z-index:1;background:#e9eff0}.map-fallback{z-index:0;touch-action:none}.track-panel .map-fallback{height:100%;background:#e9eff0;border-radius:0}
+    .map-surface .leaflet-tile{max-width:none!important;max-height:none!important}.map-surface .leaflet-control-attribution{color:#294b59;background:#ffffffdf;font-size:10px}.map-surface .leaflet-control-attribution a{color:#006578}.position-icon{background:transparent;border:0}.route-marker{display:block;width:24px;height:24px;background:#e84258;border:3px solid white;border-radius:50%;box-shadow:0 1px 7px #0008}
+    .map-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;font-size:.75rem;color:var(--muted)}.zoom-buttons{display:flex;gap:8px}.zoom-buttons button{min-width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:1.4rem;touch-action:manipulation}.zoom-buttons button:disabled{opacity:.35}
+    .map-readout{position:static;display:flex;flex-wrap:wrap;gap:16px 30px;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:16px;background:#081821}.map-readout>div{display:grid;gap:6px;min-width:0}.map-readout span{font-size:.72rem;color:var(--muted)}.map-readout b{color:var(--cyan);font-size:.85rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+    .save-options{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.save-options label{display:grid;gap:8px;flex:1;min-width:210px;font-size:.8rem;color:var(--muted)}.save-options .button{padding:10px 14px}.individual-exports{margin-top:16px}
+    @media(max-width:760px){.review-grid{grid-template-columns:1fr}.review-grid>video{min-height:220px}.map-viewport{height:280px}}
+    @media(max-width:500px){.topbar{grid-template-columns:auto 1fr;gap:10px}.brand-logo{width:52px;height:52px}.topbar .badge{grid-column:2;justify-self:start;font-size:.65rem;padding:4px 8px}.topbar h1{font-size:1.25rem}.save-options label{flex-basis:100%}.save-options .button{flex:1}}
   </style>
-  <title>GeoFrame Recorder</title>
+  <title>Road Damage Analysis</title>
 </head>
 <body>
   <main class="app-shell">
     <header class="topbar">
+      <img class="brand-logo" src="./logo.png" alt="PRIMA LABORATORY 岩手県立大学 ソフトウェア情報学部" width="64" height="64">
       <div>
         <p class="eyebrow">FIELD CAPTURE</p>
-        <h1>GeoFrame Recorder</h1>
+        <h1>Road Damage Analysis</h1>
       </div>
       <div id="secureBadge" class="badge">HTTPS確認中</div>
     </header>
@@ -60,12 +71,15 @@
       </div>
 
       <div class="controls">
-        <button id="prepareBtn" class="button secondary">カメラとGPSを許可</button>
+        <button id="prepareBtn" class="button secondary permission-button" aria-label="カメラとGPSを許可" title="カメラとGPSを許可">
+          <span id="cameraPermission" class="permission-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h4l2-3h4l2 3h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13" r="4"/></svg><span class="permission-check" aria-hidden="true">✓</span></span>
+          <span id="gpsPermission" class="permission-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg><span class="permission-check" aria-hidden="true">✓</span></span>
+        </button>
         <button id="recordBtn" class="record-button" disabled aria-label="撮影開始"><span></span></button>
         <button id="switchBtn" class="button ghost" disabled>カメラ切替</button>
       </div>
       <p class="status"><label><input id="recordAudio" type="checkbox"> 音声も録音する（マイク許可が必要）</label></p>
-      <p id="status" class="status" role="status">「カメラとGPSを許可」を押してください。</p>
+      <p id="status" class="status" role="status" hidden></p>
     </section>
 
     <section class="data-grid">
@@ -81,8 +95,15 @@
 
       <article class="panel track-panel">
         <div class="panel-head"><h2>移動軌跡</h2><button id="clearTrackBtn" class="text-button">消去</button></div>
-        <canvas id="trackCanvas" width="800" height="360" aria-label="GPS移動軌跡"></canvas>
-        <p class="map-note">現在位置を中央に表示します。北が上です。</p>
+        <div class="map-column">
+          <div class="map-viewport" id="liveViewport">
+            <canvas id="liveFallback" class="map-fallback" aria-label="移動軌跡の相対軌跡"></canvas>
+            <div id="liveMap" class="map-surface" aria-label="移動軌跡の地図" tabindex="0" hidden></div>
+          </div>
+          <div class="map-toolbar"><span>現在位置に追従</span><div class="zoom-buttons" role="group" aria-label="移動軌跡の拡大縮小"><button id="liveZoomOut" type="button" aria-label="移動軌跡を縮小">−</button><button id="liveZoomIn" type="button" aria-label="移動軌跡を拡大">＋</button></div></div>
+          <p id="liveNote" class="map-note">＋／− または2本指で拡大・縮小できます。</p>
+          <button id="liveRetry" type="button" class="text-button" hidden>地図を再取得</button>
+        </div>
       </article>
     </section>
 
@@ -112,12 +133,22 @@
         <div><p class="eyebrow">SELECTED RECORDING</p><h2>記録データ</h2></div>
         <span id="recordingSummary">まだ記録がありません</span>
       </div>
+      <div class="save-options">
+        <label for="saveDestination">保存先<select id="saveDestination"><option value="local">ローカル（このデバイス）</option><option value="dropbox">Dropbox（共有画面）</option><option value="onedrive">OneDrive（共有画面）</option><option value="gdrive">Google Drive（共有画面）</option></select></label>
+        <button id="prepareArchive" class="button" disabled>保存用ZIPを作成</button>
+        <button id="saveArchive" class="button secondary" disabled>このデバイスに保存</button>
+      </div>
+      <p id="saveHint" class="notice">動画・GPS・フレーム対応表を1つのZIPにまとめて保存します。</p>
+      <p id="saveStatus" class="notice" role="status" hidden></p>
+      <p class="privacy-note">録画はまずこのブラウザのライブラリに保存します。クラウドへの保存はZIPを作成後、共有画面で保存先アプリを選んで完了してください。</p>
+      <details class="individual-exports"><summary>個別のファイルをダウンロード</summary>
       <div class="downloads">
         <button id="downloadVideo" class="download-card" disabled><b>動画</b><span id="videoFileLabel">video.webm / .mp4</span></button>
         <button id="downloadGps" class="download-card" disabled><b>GPSログ</b><span>gps.csv</span></button>
         <button id="downloadMeta" class="download-card" disabled><b>フレーム対応表</b><span>metadata.json</span></button>
       </div>
-      <p class="privacy-note">動画・GPSは端末内に保存します。地図の取得時には表示範囲が地図サービスに送信されます。</p>
+      </details>
+      <p class="privacy-note">動画・GPSは選択した共有先へ渡すまで端末内で処理します。地図の取得時には表示範囲が地図サービスに送信されます。</p>
     </section>
 
     <section class="panel review-panel" id="reviewPanel" hidden>
@@ -127,15 +158,19 @@
       </div>
       <div class="review-grid">
         <video id="playback" controls playsinline preload="metadata"></video>
-        <div class="map-wrap">
-          <canvas id="routeFallback" aria-label="現在位置を中央にした軌跡"></canvas>
-          <div id="routeMap" aria-label="撮影軌跡の地図"></div>
-          <div class="map-readout"><b id="mapTime">00:00.000</b><span id="mapCoordinates">位置情報なし</span></div>
+        <div class="map-column">
+          <div class="map-viewport" id="routeViewport">
+            <canvas id="routeFallback" class="map-fallback" aria-label="再生軌跡の相対軌跡"></canvas>
+            <div id="routeMap" class="map-surface" aria-label="再生軌跡の地図" tabindex="0" hidden></div>
+          </div>
+          <div class="map-toolbar"><span>現在位置に追従</span><div class="zoom-buttons" role="group" aria-label="再生軌跡の拡大縮小"><button id="routeZoomOut" type="button" aria-label="再生軌跡を縮小">−</button><button id="routeZoomIn" type="button" aria-label="再生軌跡を拡大">＋</button></div></div>
+          <p id="routeNote" class="map-note">＋／− または2本指で拡大・縮小できます。</p>
+          <button id="routeRetry" type="button" class="text-button" hidden>地図を再取得</button>
         </div>
       </div>
-      <p id="reviewNote" class="privacy-note">再生位置に合わせて推定位置を中央に表示します。地図を取得できない場合は相対軌跡を表示します。</p>
+      <div class="map-readout" aria-label="再生時刻と位置情報"><div><span>動画時間</span><b id="mapTime">00:00:00.000</b></div><div><span>緯度・経度 / GPS精度</span><b id="mapCoordinates">位置情報なし</b></div></div>
     </section>
   </main>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="./vendor/leaflet/leaflet.js"></script>
   <script type="module" src="./app.js"></script>
 </body></html>

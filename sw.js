@@ -1,5 +1,7 @@
-const CACHE='geoframe-v4';
-const ASSETS=['./','./index.html','./app.js','./core.js','./storage.js','./manifest.webmanifest','./icon.svg'];
+const CACHE='geoframe-v5';
+const ASSETS=['./','./index.html','./app.js','./core.js','./storage.js','./map-view.js','./export.js','./manifest.webmanifest','./logo.png','./tile-unavailable.svg',
+  './vendor/leaflet/leaflet.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png',
+  './vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS))));
 // Activate on the next app launch, never replace code during a recording.
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE&&key.startsWith('geoframe-')).map(key=>caches.delete(key))))));

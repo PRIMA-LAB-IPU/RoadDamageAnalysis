@@ -1,1 +1,17 @@
-{"name":"GeoFrame Recorder","short_name":"GeoFrame","description":"動画とGPS位置情報を同時記録","start_url":"./","display":"standalone","background_color":"#061018","theme_color":"#07141d","orientation":"any","icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
+{
+  "name": "Road Damage Analysis",
+  "short_name": "Road Damage",
+  "description": "動画とGPS位置情報を同時記録",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#061018",
+  "theme_color": "#07141d",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./logo.png",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
