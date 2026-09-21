@@ -1,7 +1,7 @@
 # Road Damage Analysis
 
 道路の動画とGPSを一緒に記録し、動画の再生位置に合わせて走行軌跡を確認するアプリです。
-[撮影する](#capture) ⇒ [画質を選ぶ](#quality) ⇒  [過去の動画を開く](#library) ⇒ [再生する](#playback) ⇒ [保存する](#save) ⇒ [困ったとき](#help) ⇒ [開発者向け](#development) の順に操作します。
+[動画の撮影](#capture) ⇒ [画質を選ぶ](#quality) ⇒  [過去の動画を開く](#library) ⇒ [再生する](#playback) ⇒ [保存する](#save) ⇒ [困ったとき](#help) ⇒ [開発者向け](#development) の順に操作します。
 
 
 ## はじめに
@@ -12,7 +12,7 @@
 
 <a id="capture"></a>
 
-## 1. 撮影する
+## 1. 動画の撮影
 
 <img src="docs/screenshots/capture.png" width="360" alt="撮影中の画面。カメラ・GPS許可アイコン、中央の停止ボタン、画質設定、録画時間を表示。">
 
