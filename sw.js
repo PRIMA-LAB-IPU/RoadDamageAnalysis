@@ -1,4 +1,4 @@
-const CACHE='geoframe-v5';
+const CACHE='geoframe-v6';
 const ASSETS=['./','./index.html','./app.js','./core.js','./storage.js','./map-view.js','./export.js','./manifest.webmanifest','./logo.png','./tile-unavailable.svg',
   './vendor/leaflet/leaflet.js','./vendor/leaflet/leaflet.css','./vendor/leaflet/images/layers.png','./vendor/leaflet/images/layers-2x.png',
   './vendor/leaflet/images/marker-icon.png','./vendor/leaflet/images/marker-icon-2x.png','./vendor/leaflet/images/marker-shadow.png'];

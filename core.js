@@ -39,7 +39,7 @@ export function interpolateFrames(points, duration, fps) {
 }
 
 export function parseLog(text, name) {
-  if (name.toLowerCase().endsWith('.json')) {
+  if (/\.(json|txt)$/i.test(name)) {
     const data = JSON.parse(text);
     return {points:normalizePoints(data.gps || data.frames), meta:data};
   }

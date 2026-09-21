@@ -28,7 +28,7 @@
     .text-button{min-height:44px}.button,.download-card{touch-action:manipulation}.record-button:disabled{opacity:.35;cursor:not-allowed}
     .panel-head{flex-wrap:wrap}.panel-head>span{font-size:.8rem;color:var(--muted)}
     @media(max-width:420px){.controls{grid-template-columns:1fr 64px 1fr;gap:8px;padding:14px 10px}.record-button{width:62px;height:62px}.record-button span{width:44px;height:44px}.button{padding:8px;font-size:.75rem;text-wrap:balance}.topbar{gap:8px}.hud{gap:12px}.library-tools>label{flex-basis:100%}.library-tools>.button{flex:1}}
-    .topbar{display:grid;grid-template-columns:auto 1fr auto;gap:14px}.brand-logo{object-fit:contain;border-radius:50%;background:white;padding:3px;width:64px;height:64px}.topbar h1{font-size:clamp(1.15rem,3.8vw,1.8rem);line-height:1.15}.topbar .badge{white-space:nowrap}
+    .topbar{display:grid;grid-template-columns:auto 1fr;gap:14px}.brand-logo{object-fit:contain;border-radius:50%;background:white;padding:3px;width:64px;height:64px}.topbar h1{font-size:clamp(1.15rem,3.8vw,1.8rem);line-height:1.15}
     .permission-button{display:flex;justify-content:center;gap:18px;align-items:center;min-height:52px}.permission-icon{position:relative;display:inline-flex;opacity:.6}.permission-icon svg{width:25px;height:25px}.permission-icon.granted{opacity:1}.permission-check{display:none;position:absolute;right:-7px;bottom:-6px;background:#fff;color:#006d5b;border-radius:50%;width:15px;height:15px;font-size:11px;line-height:15px}.permission-icon.granted .permission-check{display:block}.permission-button[aria-busy=true]{opacity:.6}
     .review-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}.review-grid>video{width:100%;aspect-ratio:16/10;min-height:280px;background:#03090d;border-radius:14px;object-fit:contain}.map-column{min-width:0}
     .map-viewport{position:relative;width:100%;height:300px;isolation:isolate;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#e9eff0;color-scheme:light}
@@ -38,7 +38,7 @@
     .map-readout{position:static;display:flex;flex-wrap:wrap;gap:16px 30px;border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:16px;background:#081821}.map-readout>div{display:grid;gap:6px;min-width:0}.map-readout span{font-size:.72rem;color:var(--muted)}.map-readout b{color:var(--cyan);font-size:.85rem;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
     .save-options{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.save-options label{display:grid;gap:8px;flex:1;min-width:210px;font-size:.8rem;color:var(--muted)}.save-options .button{padding:10px 14px}.individual-exports{margin-top:16px}
     @media(max-width:760px){.review-grid{grid-template-columns:1fr}.review-grid>video{min-height:220px}.map-viewport{height:280px}}
-    @media(max-width:500px){.topbar{grid-template-columns:auto 1fr;gap:10px}.brand-logo{width:52px;height:52px}.topbar .badge{grid-column:2;justify-self:start;font-size:.65rem;padding:4px 8px}.topbar h1{font-size:1.25rem}.save-options label{flex-basis:100%}.save-options .button{flex:1}}
+    @media(max-width:500px){.topbar{grid-template-columns:auto 1fr;gap:10px}.brand-logo{width:52px;height:52px}.topbar h1{font-size:1.25rem}.save-options label{flex-basis:100%}.save-options .button{flex:1}}
   </style>
   <title>Road Damage Analysis</title>
 </head>
@@ -50,7 +50,6 @@
         <p class="eyebrow">FIELD CAPTURE</p>
         <h1>Road Damage Analysis</h1>
       </div>
-      <div id="secureBadge" class="badge">HTTPS確認中</div>
     </header>
 
     <section class="capture-card" aria-label="撮影画面">
@@ -119,10 +118,10 @@
         <form id="importForm">
           <div class="library-tools">
             <label for="importVideo">動画（必須）<input id="importVideo" type="file" accept="video/*,.mp4,.webm,.mov" required></label>
-            <label for="importLog">同じ動画の位置情報（任意）<input id="importLog" type="file" accept=".json,.csv,application/json,text/csv"></label>
+            <label for="importLog">同じ動画の位置情報（任意）<input id="importLog" type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain"></label>
             <button id="importBtn" class="button secondary" type="submit">読み込んで保存</button>
           </div>
-          <p class="notice">このアプリで書き出した metadata.json または gps.csv を選択してください。位置情報がない動画も再生できます。</p>
+          <p class="notice">このアプリで書き出した metadata.json / metadata.json.txt または gps.csv を選択してください。位置情報がない動画も再生できます。</p>
         </form>
       </details>
       <p class="privacy-note">ブラウザのデータ消去で履歴も削除されます。大切な記録は動画と位置情報をダウンロードしてください。</p>
@@ -134,13 +133,22 @@
         <span id="recordingSummary">まだ記録がありません</span>
       </div>
       <div class="save-options">
-        <label for="saveDestination">保存先<select id="saveDestination"><option value="local">ローカル（このデバイス）</option><option value="dropbox">Dropbox（共有画面）</option><option value="onedrive">OneDrive（共有画面）</option><option value="gdrive">Google Drive（共有画面）</option></select></label>
-        <button id="prepareArchive" class="button" disabled>保存用ZIPを作成</button>
+        <label for="saveDestination">保存先<select id="saveDestination"><option value="local">ローカル（このデバイス）</option><option value="dropbox">Dropbox</option></select></label>
+        <button id="prepareArchive" class="button" disabled>保存用データを準備</button>
         <button id="saveArchive" class="button secondary" disabled>このデバイスに保存</button>
       </div>
       <p id="saveHint" class="notice">動画・GPS・フレーム対応表を1つのZIPにまとめて保存します。</p>
       <p id="saveStatus" class="notice" role="status" hidden></p>
-      <p class="privacy-note">録画はまずこのブラウザのライブラリに保存します。クラウドへの保存はZIPを作成後、共有画面で保存先アプリを選んで完了してください。</p>
+      <div id="dropboxFiles" hidden>
+        <p class="notice">Dropboxが共有先に出ない・まとめて送れない場合は、次の3つを個別に共有してください。</p>
+        <div class="downloads" role="group" aria-label="Dropboxへファイルを個別に共有">
+          <button id="shareVideo" class="button" disabled>動画を共有</button>
+          <button id="shareGps" class="button" disabled>GPSログを共有</button>
+          <button id="shareMetadata" class="button" disabled>フレーム対応表を共有</button>
+        </div>
+        <p id="shareProgress" class="notice" role="status"></p>
+      </div>
+      <p class="privacy-note">録画はまずこのブラウザのライブラリに保存します。Dropboxへはデータを準備後、共有画面でDropboxを選んで保存を完了してください。</p>
       <details class="individual-exports"><summary>個別のファイルをダウンロード</summary>
       <div class="downloads">
         <button id="downloadVideo" class="download-card" disabled><b>動画</b><span id="videoFileLabel">video.webm / .mp4</span></button>

@@ -42,12 +42,31 @@ export async function recordingArchive(recording,onProgress){
   ],onProgress);
   return new File([zip],`road_damage_${recording.id}.zip`,{type:'application/zip'});
 }
-export function supportsFileShare(file){try{return !!navigator.share&&!!navigator.canShare?.({files:[file]})}catch{return false}}
+export function recordingShareFiles(recording){
+  const base=`road_damage_${recording.id}`,meta=recordingMetadata(recording);
+  meta.videoFile=`${base}.${recording.ext}`;meta.gpsFile=`${base}_gps.csv`;
+  // These are actual video/CSV/plain-text files, not ZIP bytes with a false MIME type.
+  // Drop codec parameters from MediaRecorder's MIME value for native share matching.
+  const type=recording.video.type.split(';')[0]||({mp4:'video/mp4',webm:'video/webm'}[recording.ext]||'application/octet-stream');
+  return [new File([recording.video],meta.videoFile,{type}),
+    new File([makeCsv(recording.points)],meta.gpsFile,{type:'text/csv'}),
+    new File([JSON.stringify(meta)],`${base}_metadata.json.txt`,{type:'text/plain'})];
+}
+export function supportsFileShare(fileOrFiles){
+  const files=Array.isArray(fileOrFiles)?fileOrFiles:[fileOrFiles];
+  try{return files.length>0&&files.every(file=>file instanceof File)&&!!navigator.share&&!!navigator.canShare?.({files})}catch{return false}
+}
+export async function shareRecordingFiles(files){
+  if(!supportsFileShare(files))throw new DOMException('このファイルの共有には対応していません。','NotSupportedError');
+  // No extra title/text: send only the files to Android's receiving app.
+  await navigator.share({files});return 'shared';
+}
 export async function saveArchive(file,destination,download){
-  if(destination!=='local'){
-    if(supportsFileShare(file)){await navigator.share({files:[file],title:'Road Damage Analysis'});return 'shared'}
+  if(destination==='dropbox'){
+    if(supportsFileShare(file))return shareRecordingFiles([file]);
     download(file,file.name);return 'manual-upload';
   }
+  if(destination!=='local')throw new Error('保存先が無効です。');
   if(typeof window.showSaveFilePicker==='function'){
     const handle=await window.showSaveFilePicker({suggestedName:file.name,types:[{description:'動画・位置情報 ZIP',accept:{'application/zip':['.zip']}}]});
     const writable=await handle.createWritable();

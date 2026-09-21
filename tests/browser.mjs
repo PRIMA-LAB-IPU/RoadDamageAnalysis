@@ -35,12 +35,21 @@ try{
       return canvas.captureStream(30);
     };
     window.showSaveFilePicker=undefined;
-    Object.defineProperty(navigator,'canShare',{value:()=>true});
-    Object.defineProperty(navigator,'share',{value:async data=>{window.sharedName=data.files[0].name;if(window.cancelShare)throw new DOMException('cancel','AbortError')}});
+    localStorage.setItem('road-damage-save-destination','removed-provider');
+    Object.defineProperty(navigator,'canShare',{value:({files})=>files.length>0&&(!window.singleFileOnly||files.length===1)&&files.every(file=>['video/webm','video/mp4','text/csv','text/plain'].includes(file.type))});
+    Object.defineProperty(navigator,'share',{value:async data=>{
+      if(!navigator.userActivation.isActive)throw new DOMException('activation lost','NotAllowedError');
+      if(window.cancelShare)throw new DOMException('cancel','AbortError');
+      if(window.failShare)throw new DOMException('transfer failed','DataError');
+      window.sharedData={names:data.files.map(f=>f.name),types:data.files.map(f=>f.type),title:data.title};
+    }});
   });
   await page.goto(origin);
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='0件');
   assert.equal(await page.title(),'Road Damage Analysis');
+  assert.deepEqual(await page.locator('#saveDestination option').evaluateAll(options=>options.map(o=>o.value)),['local','dropbox']);
+  assert.equal(await page.locator('#saveDestination').inputValue(),'local');
+  assert.equal(await page.locator('#secureBadge').count(),0);
   assert.equal(await page.locator('.brand-logo').evaluate(i=>i.complete&&i.naturalWidth>0),true);
   assert.equal(await page.locator('#status').isVisible(),false);
   assert.equal(await page.locator('#prepareBtn svg').count(),2);
@@ -92,19 +101,35 @@ try{
   await page.locator('#prepareArchive').click();await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
   const download=page.waitForEvent('download');await page.locator('#saveArchive').click();const zip=await download;
   assert.match(zip.suggestedFilename(),/^road_damage_.*\.zip$/);if(output)await zip.saveAs(path.join(output,'recording.zip'));
-  for(const provider of ['dropbox','onedrive','gdrive']){
-    await page.locator('#saveDestination').selectOption(provider);await page.locator('#saveArchive').click();
-    await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));
-    assert.match(await page.evaluate(()=>window.sharedName),/\.zip$/);
-  }
+  await page.locator('#saveDestination').selectOption('dropbox');await page.locator('#saveArchive').click();
+  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));
+  const shared=await page.evaluate(()=>window.sharedData);
+  assert.deepEqual(shared.types,['video/webm','text/csv','text/plain']);assert.equal(shared.title,undefined);
+  assert.equal(shared.names.length,3);assert.ok(shared.names.every(name=>!name.endsWith('.zip')));
+  await page.evaluate(()=>window.singleFileOnly=true);
+  await page.locator('#saveDestination').selectOption('local');await page.locator('#saveDestination').selectOption('dropbox');
+  assert.equal(await page.locator('#saveArchive').isDisabled(),true);
+  for(const id of ['shareVideo','shareGps','shareMetadata']){await page.locator('#'+id).click();await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));assert.equal((await page.evaluate(()=>window.sharedData)).names.length,1)}
+  await page.evaluate(()=>{window.singleFileOnly=false;window.failShare=true});
+  await page.locator('#shareVideo').click();await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('ファイルを共有できませんでした'));
+  await page.evaluate(()=>window.failShare=false);
+  await page.locator('#saveDestination').selectOption('local');await page.locator('#saveDestination').selectOption('dropbox');
   await page.evaluate(()=>window.cancelShare=true);await page.locator('#saveArchive').click();
-  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('キャンセル'));
+  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有が中止'));
   assert.equal(await page.locator('#saveArchive').isEnabled(),true);
   if(output)await page.screenshot({path:path.join(output,'review-mobile.png'),fullPage:true});
   await page.reload();await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='1件');
   await page.locator('#recordingSelect').selectOption({index:1});await page.locator('#openRecording').click();
   await page.waitForSelector('#routeMap .route-marker');await assertCentered('route');
   assert.equal(await page.locator('#saveArchive').isDisabled(),true);
+  // Dropbox preparation must not require a ZIP or a prior local export.
+  await page.locator('#saveDestination').selectOption('dropbox');await page.locator('#prepareArchive').click();
+  await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
+  await page.locator('#saveArchive').click();
+  await page.waitForFunction(()=>document.getElementById('saveStatus').textContent.includes('共有先にファイルを渡しました'));
+  assert.equal((await page.evaluate(()=>window.sharedData)).names.length,3);
+  await page.locator('#saveDestination').selectOption('local');assert.equal(await page.locator('#saveArchive').isDisabled(),true);
+  await page.locator('#prepareArchive').click();await page.waitForFunction(()=>!document.getElementById('saveArchive').disabled);
   assert.deepEqual(errors,[]);
-  console.log('PASS: branding, permission icons, local Leaflet CSS, live/review centering, seek, zoom buttons, native pinch, tile failures/retry, resize, ZIP download, cloud share/cancel, persisted history.');
+  console.log('PASS: local/Dropbox only, removed header badge, Android rejects ZIP but shares video/CSV/text, individual share, transfer failure/cancel, plus map/recording/ZIP/history regressions.');
 }finally{await browser?.close();server.close()}
