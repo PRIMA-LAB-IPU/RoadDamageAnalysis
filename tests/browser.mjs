@@ -67,6 +67,7 @@ try{
   await page.goto(origin);
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='0件');
   assert.equal(await page.title(),'Road Damage Analysis');
+  assert.match(await page.locator('#appVersion').textContent(),/2026\.09\.22\.1/);
   assert.equal(await page.locator('.topbar .eyebrow').textContent(),'Prima Laboratory');
   assert.deepEqual(await page.locator('.panel h2').allTextContents(),['現在位置','移動軌跡','録画データ','データの再生','データの保存']);
   assert.equal(await page.locator('#openRecording,#prepareArchive').count(),0);
@@ -103,6 +104,14 @@ try{
   await page.locator('#recordBtn').click();
   await page.waitForFunction(()=>window.largeChunkDelivered);
   assert.equal(await page.evaluate(()=>window.activeTestRecorder.state),'recording','600MB reported chunk does not stop recording');
+  const portraitWidth=await page.locator('#capturePanel').evaluate(el=>el.getBoundingClientRect().width);
+  await page.setViewportSize({width:844,height:390});await page.waitForTimeout(200);
+  const landscape=await page.locator('#capturePanel').evaluate(el=>({width:el.getBoundingClientRect().width,fit:getComputedStyle(document.getElementById('preview')).objectFit,ratio:document.getElementById('preview').parentElement.getBoundingClientRect().width/document.getElementById('preview').parentElement.getBoundingClientRect().height}));
+  assert.ok(Math.abs(landscape.width-portraitWidth)<1,'landscape capture remains portrait width');
+  assert.equal(landscape.fit,'contain');assert.ok(Math.abs(landscape.ratio-16/9)<0.02,'landscape preview retains intrinsic aspect ratio');
+  assert.equal(await page.evaluate(()=>window.activeTestRecorder.state),'recording','rotation does not stop capture');
+  if(output)await page.locator('#capturePanel').screenshot({path:path.join(output,'capture-landscape.png')});
+  await page.setViewportSize({width:390,height:844});
   await page.evaluate(async()=>{
     await window.testWakeLocks.at(-1).release();
     Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});
@@ -122,6 +131,9 @@ try{
   await page.evaluate(()=>window.reportLargeChunk=false);
   const capture=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.capture});
   assert.equal(capture.quality,'smooth');assert.equal(capture.requestedVideoBitsPerSecond,24000000);
+  const ending=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.recordingEnd});
+  assert.equal(ending.reason,'user-stop');assert.equal(ending.appVersion,'2026.09.22.1');
+  assert.ok(ending.receivedBytes>512*1024*1024);assert.equal(await page.locator('#recordingEndNotice').isVisible(),false);
   assert.equal(capture.width,640);assert.equal(capture.height,360);assert.equal(capture.frameRate,60);
   await page.waitForFunction(()=>document.getElementById('playback').readyState>=2);
   await page.locator('#playback').evaluate(video=>new Promise(resolve=>{video.addEventListener('seeked',resolve,{once:true});video.currentTime=0.5}));
@@ -260,6 +272,12 @@ try{
   await page.locator('#prepareBtn').click();
   await page.waitForFunction(()=>!document.getElementById('qualitySelect').disabled);
   if(output)await page.screenshot({path:path.join(output,'quality-import-mobile.png'),fullPage:true});
+  // Browser-originated stop must remain visible after automatic review scroll.
+  await page.locator('#recordBtn').click();await page.waitForTimeout(1100);
+  await page.evaluate(()=>window.activeTestRecorder.stop());
+  await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='9件');
+  assert.match(await page.locator('#recordingEndNotice').textContent(),/browser-stop.*2026\.09\.22\.1/);
+  assert.equal(await page.locator('#recordingEndNotice').isVisible(),true);
   assert.deepEqual(errors,[]);
   console.log('PASS: quality constraints, actual capture metadata, setting persistence, folder/combined-file import, filename matching, native directory picker, stored GPS recovery, missing/invalid logs, plus recording/playback/share/map/history regressions.');
 }finally{await browser?.close();server.close()}

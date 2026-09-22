@@ -7,6 +7,16 @@ import {recordingArchive,recordingMetadata,recordingShareFiles,shareRecordingFil
 
 const $=id=>document.getElementById(id);
 const preview=$('preview'), playback=$('playback');
+const APP_VERSION='2026.09.22.1';
+$('appVersion').textContent=`バージョン ${APP_VERSION}`;
+let portraitCaptureWidth=0;
+function updateCaptureWidth(){
+  if(innerWidth<=innerHeight)portraitCaptureWidth=$('capturePanel').getBoundingClientRect().width;
+  const portraitViewport=Math.min(screen.width,screen.height);
+  const fallback=portraitViewport-2*Math.max(16,Math.min(40,portraitViewport*.04));
+  document.documentElement.style.setProperty('--portrait-capture-width',`${portraitCaptureWidth||fallback}px`);
+}
+window.addEventListener('resize',updateCaptureWidth);updateCaptureWidth();
 let stream=null, recorder=null, watchId=null, gpsGranted=false, cameraReady=false, preparing=false, saving=false, libraryBusy=false;
 let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null, chunks=[];
 let startedAt=0, startedMono=0, stoppedMono=0, timerId, wakeLock=null, recordingProblem='';
@@ -17,6 +27,7 @@ const sharedFiles=new Set();
 let preparationWorker=null,preparationVersion=0,preparingFiles=false,selectionVersion=0;
 let animationId=null;
 let sessionCapture=null;
+let recordingEndReason='user-stop',recordedBytes=0;
 let wakeLockPending=false;
 const importSource=new ImportSource(controls);
 try{const quality=localStorage.getItem('road-damage-quality');if(['high','ultra','smooth','compact'].includes(quality))$('qualitySelect').value=quality}catch{}
@@ -73,7 +84,7 @@ async function prepareCamera(){
     cameraReady=true;$('cameraEmpty').hidden=true;updateQualityReadout();
     stream.getVideoTracks()[0].addEventListener('ended',()=>{
       cameraReady=false;$('cameraEmpty').hidden=false;
-      if(isRecording()){recordingProblem='カメラ接続が切れたため録画を終了しました。';stopRecording()}
+      if(isRecording()){recordingProblem='カメラ接続が切れたため録画を終了しました。';stopRecording('camera-ended')}
       status('カメラ接続が切れました。もう一度許可ボタンを押してください。',true);controls();
     });
     status(gpsGranted?'準備完了。中央のボタンで撮影を開始できます。':'カメラの準備完了。GPSの取得を待っています。');
@@ -122,8 +133,9 @@ async function acquireWakeLock(){
     wakeLock=lock;lock.addEventListener('release',()=>{if(wakeLock===lock)wakeLock=null});
   }catch{}finally{wakeLockPending=false}
 }
-function stopRecording(){
+function stopRecording(reason='user-stop'){
   if(!isRecording())return;
+  recordingEndReason=reason;
   stoppedMono=performance.now();saving=true;recorder.stop();clearInterval(timerId);controls();status('録画を終了し、端末に保存しています…');
 }
 function toggleRecord(){
@@ -131,7 +143,7 @@ function toggleRecord(){
   if(!cameraReady||!gpsGranted||saving)return;
   if(!latestGps||Date.now()-latestGps.timestamp>15000){status('新しいGPS位置情報を待ってから撮影してください。',true);return}
   if(unsaved&&!confirm('未保存の記録があります。先にダウンロードしてください。新しい録画を開始しますか？'))return;
-  playback.pause();chunks=[];sessionGps=[];recordingProblem='';
+  playback.pause();chunks=[];sessionGps=[];recordingProblem='';recordedBytes=0;recordingEndReason='browser-stop';
   try{
     const quality=$('qualitySelect').value;
     const mime=recordingMimeType(quality,type=>MediaRecorder.isTypeSupported(type),navigator);
@@ -144,10 +156,14 @@ function toggleRecord(){
     recorder.ondataavailable=e=>{
       // No application-imposed size/time limit. Keep encoded Blob chunks;
       // do not copy the entire video into an ArrayBuffer during capture.
-      if(e.data.size)chunks.push(e.data);
+      if(e.data.size){chunks.push(e.data);recordedBytes+=e.data.size}
     };
     recorder.onstop=finishRecording;
-    recorder.onerror=()=>{recordingProblem='録画エラーが発生しました。保存された動画を確認してください。';if(isRecording())stopRecording()};
+    recorder.onerror=event=>{
+      recordingEndReason='recorder-error';
+      recordingProblem=`録画エラー（${event.error?.name||'詳細不明'}）が発生しました。保存された動画を確認してください。`;
+      if(isRecording())stopRecording('recorder-error');
+    };
     startedAt=Date.now();startedMono=performance.now();stoppedMono=0;
     sessionGps=[{...latestGps,videoTime:0}];
     recorder.start(1000);
@@ -174,7 +190,9 @@ async function finishRecording(){
   const createdAt=new Date(startedAt).toISOString(),fps=sessionCapture?.frameRate||30;
   result={id:crypto.randomUUID(),name:`撮影 ${new Date(startedAt).toLocaleString('ja-JP')}`,createdAt,video,ext,duration,
     points:normalizePoints(sessionGps),fps,meta:{formatVersion:2,createdAt,durationSeconds:duration,estimatedFrameRate:fps,
-      videoFile:`video.${ext}`,gpsFile:'gps.csv',audio:sessionCapture?.audio??false,capture:sessionCapture,note:'Frame times are estimated at the camera frame rate, not decoded frame timestamps. Positions are interpolated GPS estimates; endpoints use the nearest sample.'}};
+      videoFile:`video.${ext}`,gpsFile:'gps.csv',audio:sessionCapture?.audio??false,capture:sessionCapture,
+      recordingEnd:{appVersion:APP_VERSION,reason:recordingEndReason,message:recordingProblem,receivedBytes:recordedBytes,videoBytes:video.size},
+      note:'Frame times are estimated at the camera frame rate, not decoded frame timestamps. Positions are interpolated GPS estimates; endpoints use the nearest sample.'}};
   unsaved=true;
   try{
     await putRecording(result);unsaved=false;await refreshLibrary(result.id);
@@ -195,6 +213,9 @@ function showReview(){
   resetArchive();prepareShareFiles();playback.pause();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
   playbackUrl=URL.createObjectURL(result.video);playback.src=playbackUrl;playback.load();playback.playbackRate=Number($('playbackSpeed').value);
   $('reviewPanel').hidden=false;$('recordingSummary').textContent=`${result.name} · ${fmt(result.duration)} · GPS ${result.points.length}点`;
+  const ending=result.meta?.recordingEnd;
+  $('recordingEndNotice').hidden=!ending||ending.reason==='user-stop';
+  $('recordingEndNotice').textContent=ending&&ending.reason!=='user-stop'?`${ending.message||'ページ移動または端末・ブラウザの処理によって録画が終了しました。'}（${ending.reason} / ${ending.appVersion}）`:'';
   $('videoFileLabel').textContent=`video.${result.ext}`;
   requestAnimationFrame(()=>{reviewMap.setRoute(result.points);updatePlaybackPosition();$('reviewPanel').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'})});
   controls();
@@ -373,9 +394,13 @@ document.addEventListener('visibilitychange',()=>{
   // may suspend capture independently; reacquire screen wake lock on return.
   if(document.visibilityState==='visible')acquireWakeLock();
 });
-window.addEventListener('pagehide',()=>{if(isRecording())stopRecording();stream?.getTracks().forEach(t=>t.stop());cameraReady=false;if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}gpsGranted=false});
+window.addEventListener('pagehide',()=>{if(isRecording())stopRecording('pagehide');stream?.getTracks().forEach(t=>t.stop());cameraReady=false;if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}gpsGranted=false});
 window.addEventListener('pageshow',()=>{if(!cameraReady){$('cameraEmpty').hidden=false;controls()}});
-if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>libraryStatus('オフライン機能を準備できませんでした。オンラインでご利用ください。'));
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(registration=>{
+  const check=()=>{if(registration.waiting){$('updateNotice').hidden=false;$('updateNotice').textContent='更新版があります。録画・保存の完了後、このアプリのタブとホーム画面のアプリをすべて閉じて開き直してください。'}};
+  check();registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',check));
+  registration.update().catch(()=>{});
+}).catch(()=>libraryStatus('オフライン機能を準備できませんでした。オンラインでご利用ください。'));
 refreshLibrary().catch(()=>{libraryStatus('端末内ストレージを利用できません。録画後は必ずダウンロードしてください。');$('libraryCount').textContent='保存不可'});
 drawLiveTrack();controls();
 
