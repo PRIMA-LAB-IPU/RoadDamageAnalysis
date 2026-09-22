@@ -22,8 +22,8 @@ export function recorderOptions(id,mimeType){
 }
 export function recordingMimeType(id,isSupported,device={}){
   const appleMobile=/iPhone|iPad|iPod/.test(device.userAgent||'')||(/Macintosh/.test(device.userAgent||'')&&device.maxTouchPoints>1);
-  // Prefer the native MP4 recording path for high-frame-rate iOS capture.
-  const types=id==='smooth'&&appleMobile?['video/mp4','video/webm;codecs=vp8','video/webm']:['video/webm;codecs=vp8','video/webm','video/mp4'];
+  // Use Safari's native MP4 path for every quality, including long 1080p takes.
+  const types=appleMobile?['video/mp4','video/webm;codecs=vp8','video/webm']:['video/webm;codecs=vp8','video/webm','video/mp4'];
   return types.find(type=>isSupported(type));
 }
 export function cameraQualitySummary(id,settings={}){

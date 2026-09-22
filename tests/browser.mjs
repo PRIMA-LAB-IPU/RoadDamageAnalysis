@@ -29,6 +29,16 @@ try{
     return route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><rect width="256" height="256" fill="#e1ecdf"/><path d="M0 128H256M128 0V256" stroke="white" stroke-width="12"/><path d="M0 128H256M128 0V256" stroke="#c3c6b2" stroke-width="1"/></svg>'});
   });
   await page.addInitScript(()=>{
+    const NativeWorker=window.Worker;
+    window.Worker=class extends NativeWorker{
+      constructor(url,options){super(url,options);this.videoWriter=String(url).includes('video-file-worker.js')}
+      postMessage(data,...rest){
+        if(this.videoWriter&&window.failVideoWrite&&data.action==='append'){
+          queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:{id:data.id,error:{name:'QuotaExceededError',message:'Simulated storage exhaustion'}}})));return;
+        }
+        return super.postMessage(data,...rest);
+      }
+    };
     const NativeRecorder=window.MediaRecorder;
     window.MediaRecorder=class extends NativeRecorder{
       constructor(...args){
@@ -67,7 +77,7 @@ try{
   await page.goto(origin);
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='0件');
   assert.equal(await page.title(),'Road Damage Analysis');
-  assert.match(await page.locator('#appVersion').textContent(),/2026\.09\.22\.1/);
+  assert.match(await page.locator('#appVersion').textContent(),/2026\.09\.22\.2/);
   assert.equal(await page.locator('.topbar .eyebrow').textContent(),'Prima Laboratory');
   assert.deepEqual(await page.locator('.panel h2').allTextContents(),['現在位置','移動軌跡','録画データ','データの再生','データの保存']);
   assert.equal(await page.locator('#openRecording,#prepareArchive').count(),0);
@@ -132,7 +142,7 @@ try{
   const capture=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.capture});
   assert.equal(capture.quality,'smooth');assert.equal(capture.requestedVideoBitsPerSecond,24000000);
   const ending=await page.evaluate(async()=>{const {listRecordings,getRecording}=await import('/storage.js');return (await getRecording((await listRecordings())[0].id)).meta.recordingEnd});
-  assert.equal(ending.reason,'user-stop');assert.equal(ending.appVersion,'2026.09.22.1');
+  assert.equal(ending.reason,'user-stop');assert.equal(ending.appVersion,'2026.09.22.2');
   assert.ok(ending.receivedBytes>512*1024*1024);assert.equal(await page.locator('#recordingEndNotice').isVisible(),false);
   assert.equal(capture.width,640);assert.equal(capture.height,360);assert.equal(capture.frameRate,60);
   await page.waitForFunction(()=>document.getElementById('playback').readyState>=2);
@@ -149,7 +159,7 @@ try{
   assert.ok(Math.abs(geometry.displayRatio-16/9)<0.01,'playback element follows recorded aspect ratio');
   await page.waitForSelector('#routeMap .route-marker');await assertCentered('route');
   assert.equal(await page.locator('#routeNote').isVisible(),false);
-  const mapBox=await page.locator('#routeViewport').boundingBox(),readout=await page.locator('.map-readout').boundingBox();
+  const {mapBox,readout}=await page.evaluate(()=>({mapBox:document.getElementById('routeViewport').getBoundingClientRect().toJSON(),readout:document.querySelector('.map-readout').getBoundingClientRect().toJSON()}));
   assert.ok(readout.y>=mapBox.y+mapBox.height,'readout is outside the map');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   await page.evaluate(()=>{document.getElementById('playback').currentTime=1});
@@ -276,8 +286,19 @@ try{
   await page.locator('#recordBtn').click();await page.waitForTimeout(1100);
   await page.evaluate(()=>window.activeTestRecorder.stop());
   await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='9件');
-  assert.match(await page.locator('#recordingEndNotice').textContent(),/browser-stop.*2026\.09\.22\.1/);
+  assert.match(await page.locator('#recordingEndNotice').textContent(),/browser-stop.*2026\.09\.22\.2/);
   assert.equal(await page.locator('#recordingEndNotice').isVisible(),true);
+  // Failure must not leave saving/recording latched, and reset permits another take.
+  await page.evaluate(()=>window.failVideoWrite=true);
+  await page.locator('#recordBtn').click();
+  await page.waitForFunction(()=>!document.getElementById('recoverCapture').hidden&&!document.getElementById('recoverCapture').disabled);
+  assert.equal(await page.locator('#recordBtn').getAttribute('aria-label'),'撮影開始');
+  await page.evaluate(()=>window.failVideoWrite=false);
+  await page.locator('#recoverCapture').click();
+  await page.waitForFunction(()=>!document.getElementById('recordBtn').disabled);
+  await page.locator('#recordBtn').click();await page.waitForTimeout(1200);await page.locator('#recordBtn').click();
+  await page.waitForFunction(()=>document.getElementById('libraryCount').textContent==='10件');
+  await page.waitForFunction(()=>document.getElementById('playback').readyState>=2);
   assert.deepEqual(errors,[]);
   console.log('PASS: quality constraints, actual capture metadata, setting persistence, folder/combined-file import, filename matching, native directory picker, stored GPS recovery, missing/invalid logs, plus recording/playback/share/map/history regressions.');
 }finally{await browser?.close();server.close()}

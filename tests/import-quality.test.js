@@ -54,10 +54,10 @@ test('60fps capture requests native geometry and leaves fps flexible',async()=>{
   for(const id of ['high','ultra','compact'])assert.equal(cameraConstraints(id,'environment').video.resizeMode,undefined);
   const track={contentHint:''};await optimizeTrack(track,'smooth');assert.equal(track.contentHint,'detail');
 });
-test('iPhone/iPad 60fps uses supported MP4; other presets/platforms keep existing codecs',()=>{
+test('iPhone/iPad uses supported MP4 in all qualities; Android keeps existing codecs',()=>{
   for(const device of [{userAgent:'iPhone Safari'},{userAgent:'Macintosh Safari',maxTouchPoints:5}]){
     assert.equal(recordingMimeType('smooth',()=>true,device),'video/mp4');
-    assert.equal(recordingMimeType('high',()=>true,device),'video/webm;codecs=vp8');
+    for(const quality of ['high','ultra','smooth','compact'])assert.equal(recordingMimeType(quality,()=>true,device),'video/mp4');
     assert.equal(recordingMimeType('smooth',type=>type==='video/webm',device),'video/webm');
     assert.equal(recordingMimeType('smooth',()=>false,device),undefined);
   }

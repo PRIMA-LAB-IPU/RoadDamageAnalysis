@@ -1,13 +1,14 @@
 import {ImportSource} from './import-controller.js';
+import {VideoFileWriter,readVideoFile,removeVideoFile} from './video-file.js';
 import {qualityPreset,cameraConstraints,recorderOptions,recordingMimeType,cameraQualitySummary,optimizeTrack} from './quality.js';
-import {positionAt, normalizePoints, interpolateFrames, makeCsv, parseLog} from './core.js';
+import {positionAt, normalizePoints, makeCsv, parseLog} from './core.js';
 import {listRecordings, getRecording, putRecording, deleteRecording} from './storage.js';
 import {TrackMap} from './map-view.js';
-import {recordingArchive,recordingMetadata,recordingShareFiles,shareRecordingFiles,savePreparedArchive,supportsFileShare} from './export.js';
+import {recordingArchive,metadataBlob,recordingShareFiles,shareRecordingFiles,savePreparedArchive,supportsFileShare} from './export.js';
 
 const $=id=>document.getElementById(id);
 const preview=$('preview'), playback=$('playback');
-const APP_VERSION='2026.09.22.1';
+const APP_VERSION='2026.09.22.2';
 $('appVersion').textContent=`バージョン ${APP_VERSION}`;
 let portraitCaptureWidth=0;
 function updateCaptureWidth(){
@@ -18,11 +19,12 @@ function updateCaptureWidth(){
 }
 window.addEventListener('resize',updateCaptureWidth);updateCaptureWidth();
 let stream=null, recorder=null, watchId=null, gpsGranted=false, cameraReady=false, preparing=false, saving=false, libraryBusy=false;
-let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null, chunks=[];
+let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null;
+let videoWriter=null,sessionId=null,failedVideoPath=null;
 let startedAt=0, startedMono=0, stoppedMono=0, timerId, wakeLock=null, recordingProblem='';
 let result=null, unsaved=false, playbackUrl=null;
 const liveMap=new TrackMap('live'), reviewMap=new TrackMap('route');
-let archiveFile=null,archiveId=null,exportBusy=false,shareFiles=[];
+let archiveFile=null,archivePath=null,archiveId=null,exportBusy=false,shareFiles=[];
 const sharedFiles=new Set();
 let preparationWorker=null,preparationVersion=0,preparingFiles=false,selectionVersion=0;
 let animationId=null;
@@ -48,6 +50,7 @@ function status(message,error=false){$('status').hidden=!message;$('status').tex
 function libraryStatus(message){$('libraryStatus').textContent=message;$('libraryStatus').hidden=!message}
 function controls(){
   const busy=isRecording()||saving||preparing||libraryBusy||exportBusy;
+  $('recoverCapture').disabled=busy;
   $('prepareBtn').disabled=busy;
   const permissionLabel=preparing?'許可を確認中…':cameraReady&&gpsGranted?'位置情報・カメラ許可中':'カメラとGPSを許可';
   $('prepareBtn').setAttribute('aria-label',permissionLabel);$('prepareBtn').title=permissionLabel;$('prepareBtn').setAttribute('aria-busy',String(preparing));
@@ -138,25 +141,36 @@ function stopRecording(reason='user-stop'){
   recordingEndReason=reason;
   stoppedMono=performance.now();saving=true;recorder.stop();clearInterval(timerId);controls();status('録画を終了し、端末に保存しています…');
 }
-function toggleRecord(){
+async function toggleRecord(){
   if(isRecording()){stopRecording();return}
-  if(!cameraReady||!gpsGranted||saving)return;
+  if(!cameraReady||!gpsGranted||saving||preparing)return;
   if(!latestGps||Date.now()-latestGps.timestamp>15000){status('新しいGPS位置情報を待ってから撮影してください。',true);return}
   if(unsaved&&!confirm('未保存の記録があります。先にダウンロードしてください。新しい録画を開始しますか？'))return;
-  playback.pause();chunks=[];sessionGps=[];recordingProblem='';recordedBytes=0;recordingEndReason='browser-stop';
+  const discardedPath=unsaved?result?.videoPath:null;
+  // Release failed/export data before allocating the next recording.
+  clearSelectedRecording();$('recordingSelect').value='';
+  sessionGps=[];recordingProblem='';recordedBytes=0;recordingEndReason='browser-stop';
+  preparing=true;controls();status('録画の保存先を準備しています…');
   try{
+    if(discardedPath)await removeVideoFile(discardedPath);
     const quality=$('qualitySelect').value;
     const mime=recordingMimeType(quality,type=>MediaRecorder.isTypeSupported(type),navigator);
     recorder=new MediaRecorder(stream,recorderOptions(quality,mime));
+    sessionId=crypto.randomUUID();
+    videoWriter=await VideoFileWriter.open(`${sessionId}.${recorder.mimeType.includes('mp4')?'mp4':'webm'}`);
     const settings=stream.getVideoTracks()[0].getSettings();
     sessionCapture={quality,requested:{...qualityPreset(quality)},width:settings.width??null,height:settings.height??null,
       frameRate:settings.frameRate??qualityPreset(quality).fps,aspectRatio:settings.aspectRatio??(settings.width/settings.height||null),resizeMode:settings.resizeMode??null,
       requestedVideoBitsPerSecond:qualityPreset(quality).bitrate,
       encoderVideoBitsPerSecond:recorder.videoBitsPerSecond??null,mimeType:recorder.mimeType,audio:stream.getAudioTracks().length>0};
     recorder.ondataavailable=e=>{
-      // No application-imposed size/time limit. Keep encoded Blob chunks;
-      // do not copy the entire video into an ArrayBuffer during capture.
-      if(e.data.size){chunks.push(e.data);recordedBytes+=e.data.size}
+      if(e.data.size){
+        recordedBytes+=e.data.size;
+        videoWriter.append(e.data).catch(error=>{
+          recordingEndReason='storage-error';recordingProblem=`動画の書き込みに失敗しました（${error.name}）。保存済みの部分を確認してください。`;
+          if(isRecording())stopRecording('storage-error');
+        });
+      }
     };
     recorder.onstop=finishRecording;
     recorder.onerror=event=>{
@@ -167,10 +181,11 @@ function toggleRecord(){
     startedAt=Date.now();startedMono=performance.now();stoppedMono=0;
     sessionGps=[{...latestGps,videoTime:0}];
     recorder.start(1000);
-  }catch{status('録画を開始できません。カメラを再接続して再試行してください。',true);return}
-  // Previous recordings are already persisted (or explicitly discarded above).
-  // Release playback/export blobs and terminate their preparation worker.
-  clearSelectedRecording();$('recordingSelect').value='';
+  }catch(error){
+    if(videoWriter){const path=videoWriter.path;await videoWriter.close().catch(()=>{});videoWriter=null;await removeVideoFile(path).catch(()=>{})}
+    recorder=null;status(`録画を開始できません（${error.name}）。端末の空き容量・ブラウザの保存権限を確認してください。`,true);$('recoverCapture').hidden=false;return;
+  }finally{preparing=false;controls()}
+  $('recoverCapture').hidden=true;
   $('recordBtn').classList.add('recording');$('recordBtn').setAttribute('aria-label','撮影停止');$('recIndicator').hidden=false;
   $('timer').textContent='00:00:00';$('pointCount').textContent=sessionGps.length;
   timerId=setInterval(()=>$('timer').textContent=fmt((performance.now()-startedMono)/1000),250);
@@ -179,16 +194,26 @@ function toggleRecord(){
 
 async function finishRecording(){
   saving=true;clearInterval(timerId);controls();
+  const writer=videoWriter;
+  try{
   if(!stoppedMono&&!recordingProblem)recordingProblem='端末またはブラウザによって録画が終了しました。';
   if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null}
   const duration=((stoppedMono||performance.now())-startedMono)/1000;
-  const type=recorder.mimeType||chunks[0]?.type||'video/webm',ext=type.includes('mp4')?'mp4':'webm';
-  const video=new Blob(chunks,{type});chunks=[];
+  const type=recorder.mimeType||'video/webm',ext=type.includes('mp4')?'mp4':'webm';
+  let video;
+  try{video=await writer.finish()}
+  catch(error){
+    recordingProblem=recordingProblem||`動画ファイルの確定に失敗しました（${error.name}）。途中までのデータの可能性があります。`;
+    recordingEndReason='storage-error';video=await readVideoFile(writer.path);
+  }
   $('recordBtn').classList.remove('recording');$('recordBtn').setAttribute('aria-label','撮影開始');$('recIndicator').hidden=true;
   $('timer').textContent=fmt(duration);
-  if(!video.size){saving=false;status('動画データを取得できませんでした。カメラを再接続してください。',true);controls();return}
+  if(!video.size)throw new Error('動画ファイルが空です。');
+  // Verify the persistent backing file is readable before registering it.
+  await video.slice(0,Math.min(video.size,65536)).arrayBuffer();
+  await video.slice(Math.max(0,video.size-65536)).arrayBuffer();
   const createdAt=new Date(startedAt).toISOString(),fps=sessionCapture?.frameRate||30;
-  result={id:crypto.randomUUID(),name:`撮影 ${new Date(startedAt).toLocaleString('ja-JP')}`,createdAt,video,ext,duration,
+  result={id:sessionId,name:`撮影 ${new Date(startedAt).toLocaleString('ja-JP')}`,createdAt,video,videoPath:writer.path,ext,duration,
     points:normalizePoints(sessionGps),fps,meta:{formatVersion:2,createdAt,durationSeconds:duration,estimatedFrameRate:fps,
       videoFile:`video.${ext}`,gpsFile:'gps.csv',audio:sessionCapture?.audio??false,capture:sessionCapture,
       recordingEnd:{appVersion:APP_VERSION,reason:recordingEndReason,message:recordingProblem,receivedBytes:recordedBytes,videoBytes:video.size},
@@ -198,7 +223,18 @@ async function finishRecording(){
     await putRecording(result);unsaved=false;await refreshLibrary(result.id);
     status(`${recordingProblem}録画を保存しました。`,!!recordingProblem);
   }catch{libraryStatus('端末への保存に失敗しました。「データの保存」からダウンロードしてください。');status('保存できませんでした。画面を閉じる前に動画と位置情報をダウンロードしてください。',true)}
-  finally{saving=false;controls();showReview()}
+  }catch(error){
+    if(!result)failedVideoPath=writer?.path;
+    status(`録画の確定に失敗しました：${error.message}。録画状態をリセットして再試行できます。`,true);
+    libraryStatus('動画を確定できませんでした。保存済みの録画データは削除していません。');
+    $('recoverCapture').hidden=false;
+  }finally{
+    videoWriter=null;recorder=null;sessionGps=[];saving=false;
+    $('recordBtn').classList.remove('recording');$('recordBtn').setAttribute('aria-label','撮影開始');$('recIndicator').hidden=true;
+    controls();
+    if(result)try{showReview()}catch(error){resetArchive();libraryStatus(`動画を開けませんでした：${error.message}`);$('recoverCapture').hidden=false;controls()}
+    if(recordingProblem||unsaved)$('recoverCapture').hidden=false;
+  }
 }
 
 async function refreshLibrary(selected=$('recordingSelect').value){
@@ -211,7 +247,8 @@ async function refreshLibrary(selected=$('recordingSelect').value){
 
 function showReview(){
   resetArchive();prepareShareFiles();playback.pause();if(playbackUrl)URL.revokeObjectURL(playbackUrl);
-  playbackUrl=URL.createObjectURL(result.video);playback.src=playbackUrl;playback.load();playback.playbackRate=Number($('playbackSpeed').value);
+  playbackUrl=result.videoPath&&navigator.serviceWorker?.controller?videoFileUrl(result.videoPath):URL.createObjectURL(result.video);
+  playback.src=playbackUrl;playback.load();playback.playbackRate=Number($('playbackSpeed').value);
   $('reviewPanel').hidden=false;$('recordingSummary').textContent=`${result.name} · ${fmt(result.duration)} · GPS ${result.points.length}点`;
   const ending=result.meta?.recordingEnd;
   $('recordingEndNotice').hidden=!ending||ending.reason==='user-stop';
@@ -271,7 +308,13 @@ function videoDuration(file){
     video.onerror=()=>{cleanup();reject(new Error('この端末で再生できない動画形式です。MP4などの対応形式を選択してください。'))};video.src=url;
   });
 }
-function save(blob,name){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+function videoFileUrl(path,name){const url=new URL(`./__recordings__/${path}`,location.href);if(name)url.searchParams.set('download',name);return url.href}
+function save(blob,name){
+  const path=blob===result?.video?result.videoPath:blob===archiveFile?archivePath:null;
+  const persistent=path&&navigator.serviceWorker?.controller;
+  const a=document.createElement('a'),url=persistent?videoFileUrl(path,name):URL.createObjectURL(blob);
+  a.href=url;a.download=name;document.body.append(a);a.click();a.remove();if(!persistent)setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
 function basename(){return `road_damage_${result.id}`}
 
 const destinations={local:'このデバイス',dropbox:'Dropbox'};
@@ -289,7 +332,7 @@ function shareProgress(){
 }
 function resetArchive(){
   ++preparationVersion;preparationWorker?.terminate();preparationWorker=null;preparingFiles=false;
-  archiveFile=null;archiveId=null;shareFiles=[];sharedFiles.clear();$('dropboxFiles').open=false;exportStatus('');shareProgress();destinationHint();
+  archiveFile=null;archivePath=null;archiveId=null;shareFiles=[];sharedFiles.clear();$('dropboxFiles').open=false;exportStatus('');shareProgress();destinationHint();
 }
 function prepareShareFiles(){
   if(!result)return;
@@ -331,7 +374,12 @@ $('saveArchive').onclick=async()=>{
   try{
     const selected=result;
     const outcome=await savePreparedArchive(`road_damage_${selected.id}.zip`,async()=>{
-      if(!archiveFile)archiveFile=await recordingArchive(selected,progress=>exportStatus(`保存中… ${Math.round(progress*100)}%`));
+      if(!archiveFile){
+        const zip=await recordingArchive(selected,progress=>exportStatus(`保存中… ${Math.round(progress*100)}%`));
+        const path=`export_${selected.id}.zip`,writer=await VideoFileWriter.open(path);
+        try{await writer.append(zip);archiveFile=await writer.finish();archivePath=path}
+        catch(error){await writer.close().catch(()=>{});await removeVideoFile(path).catch(()=>{});throw error}
+      }
       return archiveFile;
     },save);
     exportStatus(outcome==='saved'?'保存しました。':'ダウンロードを開始しました。');
@@ -342,6 +390,17 @@ $('saveArchive').onclick=async()=>{
 destinationHint();
 
 $('prepareBtn').onclick=prepareCamera;$('recordBtn').onclick=toggleRecord;
+$('recoverCapture').onclick=async()=>{
+  if(isRecording()||saving||preparing)return;
+  if(unsaved&&!confirm('未保存の記録を画面から破棄して撮影を再準備します。保存済みの録画データは削除しません。続けますか？'))return;
+  const discardedPath=unsaved?result?.videoPath:failedVideoPath;
+  clearSelectedRecording();$('recordingSelect').value='';
+  if(discardedPath)await removeVideoFile(discardedPath).catch(()=>{});failedVideoPath=null;
+  recorder=null;sessionGps=[];recordingProblem='';
+  stream?.getTracks().forEach(track=>track.stop());stream=null;preview.srcObject=null;cameraReady=false;
+  if(watchId!==null)navigator.geolocation.clearWatch(watchId);watchId=null;gpsGranted=false;latestGps=null;
+  $('recoverCapture').hidden=true;await prepareCamera();
+};
 $('recordAudio').onchange=()=>{if(cameraReady)prepareCamera()};
 $('qualitySelect').onchange=async()=>{
   if(isRecording()||saving)return;
@@ -379,14 +438,12 @@ $('importForm').onsubmit=importRecording;
 $('downloadVideo').onclick=()=>save(result.video,`${basename()}.${result.ext}`);
 $('downloadGps').onclick=()=>save(new Blob([makeCsv(result.points)],{type:'text/csv;charset=utf-8'}),`${basename()}_gps.csv`);
 $('downloadMeta').onclick=()=>{
-  const meta={...result.meta,formatVersion:2,durationSeconds:result.duration,videoFile:`${basename()}.${result.ext}`,gpsFile:`${basename()}_gps.csv`,gps:result.points,
-    estimatedFrameRate:result.fps,frames:interpolateFrames(result.points,result.duration,result.fps)};
-  save(new Blob([JSON.stringify(meta)],{type:'application/json'}),`${basename()}_metadata.json`);
+  save(metadataBlob(result,{videoFile:`${basename()}.${result.ext}`,gpsFile:`${basename()}_gps.csv`}),`${basename()}_metadata.json`);
 };
 ['timeupdate','seeked','loadedmetadata','durationchange'].forEach(type=>playback.addEventListener(type,()=>updatePlaybackPosition()));
 playback.addEventListener('play',()=>{cancelAnimationFrame(animationId);playbackLoop()});
 playback.addEventListener('pause',()=>{cancelAnimationFrame(animationId);updatePlaybackPosition()});
-playback.addEventListener('error',()=>{if(result)libraryStatus('動画を再生できません。この端末が対応する形式の動画を選択してください。')});
+playback.addEventListener('error',()=>{if(result){libraryStatus('動画を読み出せないか、この端末で再生できない形式です。録画状態をリセットして次の撮影を準備できます。');$('recoverCapture').hidden=false}});
 
 window.addEventListener('beforeunload',e=>{if(isRecording()||saving||unsaved){e.preventDefault();e.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{

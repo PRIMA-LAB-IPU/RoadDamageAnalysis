@@ -1,4 +1,4 @@
-import {interpolateFrames,makeCsv} from './core.js';
+import {interpolateFrames,makeCsv,positionAt} from './core.js';
 
 const encoder=new TextEncoder();
 const crcTable=Uint32Array.from({length:256},(_,n)=>{for(let i=0;i<8;i++)n=(n&1)?0xedb88320^(n>>>1):n>>>1;return n>>>0});
@@ -32,25 +32,37 @@ export function recordingMetadata(recording) {
     videoFile:`video.${recording.ext}`,gpsFile:'gps.csv',gps:recording.points,estimatedFrameRate:recording.fps,
     frames:interpolateFrames(recording.points,recording.duration,recording.fps)};
 }
+export function metadataBlob(recording,overrides={}){
+  const {frames:ignored,...meta}=recording.meta||{};
+  const header={...meta,formatVersion:2,durationSeconds:recording.duration,videoFile:`video.${recording.ext}`,gpsFile:'gps.csv',gps:recording.points,estimatedFrameRate:recording.fps,...overrides};
+  const parts=[JSON.stringify(header).slice(0,-1)+',"frames":['];
+  const count=Math.max(0,Math.floor(recording.duration*recording.fps));
+  let batch=[];
+  for(let frame=0;frame<count;frame++){
+    const videoTime=+(frame/recording.fps).toFixed(6),p=positionAt(recording.points,videoTime);
+    batch.push(JSON.stringify({frame,videoTime,latitude:p?.latitude??null,longitude:p?.longitude??null,altitude:p?.altitude??null,accuracy:p?.accuracy??null}));
+    if(batch.length===2048||frame===count-1){parts.push((frame>=2048?',':'')+batch.join(','));batch=[]}
+  }
+  parts.push(']}');return new Blob(parts,{type:'application/json'});
+}
 export async function recordingArchive(recording,onProgress){
   const readme='Road Damage Analysis\n\nZIPを展開後、アプリの「フォルダーを開く」で動画と位置情報のフォルダーを開き、動画を選択するとmetadata.jsonまたはgps.csvを自動照合します。\nフレーム位置と時刻は推定値です。\n';
   const zip=await makeZip([
     {name:`video.${recording.ext}`,blob:recording.video},
     {name:'gps.csv',blob:new Blob([makeCsv(recording.points)],{type:'text/csv;charset=utf-8'})},
-    {name:'metadata.json',blob:new Blob([JSON.stringify(recordingMetadata(recording))],{type:'application/json'})},
+    {name:'metadata.json',blob:metadataBlob(recording)},
     {name:'README.txt',blob:new Blob([readme],{type:'text/plain;charset=utf-8'})}
   ],onProgress);
   return new File([zip],`road_damage_${recording.id}.zip`,{type:'application/zip'});
 }
 export function recordingShareFiles(recording){
-  const base=`road_damage_${recording.id}`,meta=recordingMetadata(recording);
-  meta.videoFile=`${base}.${recording.ext}`;meta.gpsFile=`${base}_gps.csv`;
+  const base=`road_damage_${recording.id}`,meta={videoFile:`${base}.${recording.ext}`,gpsFile:`${base}_gps.csv`};
   // These are actual video/CSV/plain-text files, not ZIP bytes with a false MIME type.
   // Drop codec parameters from MediaRecorder's MIME value for native share matching.
   const type=recording.video.type.split(';')[0]||({mp4:'video/mp4',webm:'video/webm'}[recording.ext]||'application/octet-stream');
   return [new File([recording.video],meta.videoFile,{type}),
     new File([makeCsv(recording.points)],meta.gpsFile,{type:'text/csv'}),
-    new File([JSON.stringify(meta)],`${base}_metadata.json.txt`,{type:'text/plain'})];
+    new File([metadataBlob(recording,meta)],`${base}_metadata.json.txt`,{type:'text/plain'})];
 }
 export function supportsFileShare(fileOrFiles){
   const files=Array.isArray(fileOrFiles)?fileOrFiles:[fileOrFiles];
@@ -82,7 +94,7 @@ export async function savePreparedArchive(name,prepare,download){
   const handle=typeof window.showSaveFilePicker==='function'
     ? await window.showSaveFilePicker({suggestedName:name,types:[{description:'動画・位置情報 ZIP',accept:{'application/zip':['.zip']}}]}) : null;
   const file=await prepare();
-  if(!handle){download(file,file.name);return 'downloaded'}
+  if(!handle){download(file,name);return 'downloaded'}
   const writable=await handle.createWritable();
   try{await writable.write(file);await writable.close()}catch(error){await writable.abort().catch(()=>{});throw error}
   return 'saved';
