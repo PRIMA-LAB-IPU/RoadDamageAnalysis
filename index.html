@@ -48,6 +48,19 @@
     .video-wrap video{object-fit:contain}.video-wrap{min-height:180px}
     @media (orientation:landscape) and (pointer:coarse){.capture-card{width:min(100%,var(--portrait-capture-width,358px));margin-inline:auto}}
     .playback-column video{height:auto;aspect-ratio:auto;min-height:0;object-fit:contain}
+    .controls{grid-template-columns:minmax(0,1fr) 64px minmax(0,1fr);gap:8px;padding:14px 10px}
+    .controls .permission-button{justify-self:start;width:78px;min-height:44px;padding:8px;gap:12px}
+    .controls .permission-icon svg{width:22px;height:22px}
+    .camera-actions{display:flex;justify-self:end;gap:6px}
+    .controls .icon-button{display:grid;place-items:center;width:44px;height:44px;min-height:44px;padding:9px}
+    .icon-button svg{width:24px;height:24px}
+    .icon-button[aria-pressed="true"]{color:var(--cyan);border-color:var(--cyan);background:#0b302f}
+    #recordAudio[aria-pressed="true"] .mic-off{display:none}
+    .controls .record-button{width:62px;height:62px}.controls .record-button span{width:44px;height:44px}
+    .controls .record-button.recording span{width:26px;height:26px;border-radius:7px}
+    body.recording-focus .app-shell> :not(#capturePanel){display:none!important}
+    body.recording-focus #capturePanel>.quality-controls,body.recording-focus #capturePanel>#status,body.recording-focus #recoverCapture{display:none!important}
+    body.recording-focus .app-shell{padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom))}
   </style>
   <title>Road Damage Analysis</title>
 </head>
@@ -85,7 +98,14 @@
           <span id="gpsPermission" class="permission-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1v4m0 14v4M1 12h4m14 0h4"/></svg><span class="permission-check" aria-hidden="true">✓</span></span>
         </button>
         <button id="recordBtn" class="record-button" disabled aria-label="撮影開始"><span></span></button>
-        <button id="switchBtn" class="button ghost" disabled>カメラ切替</button>
+        <div class="camera-actions">
+          <button id="switchBtn" class="button icon-button" type="button" disabled aria-label="前後のカメラを切り替える" title="カメラ切替">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5 10 2h4l2 3h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2M7 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h3"/><path d="M8 10a5 5 0 0 1 8 1l1 2m0-4v4h-4M16 16a5 5 0 0 1-8-1l-1-2m0 4v-4h4"/></svg>
+          </button>
+          <button id="recordAudio" class="button icon-button" type="button" aria-pressed="false" aria-label="マイクをオンにする" title="マイク：オフ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/><path class="mic-off" d="m3 3 18 18"/></svg>
+          </button>
+        </div>
       </div>
       <div class="quality-controls">
         <label for="qualitySelect">録画の画質<select id="qualitySelect">
@@ -96,7 +116,6 @@
         </select></label>
         <p id="qualityReadout" class="notice" role="status"></p>
       </div>
-      <p class="status"><label><input id="recordAudio" type="checkbox"> 音声も録音する（マイク許可が必要）</label></p>
       <p id="status" class="status" role="status" hidden></p>
       <button id="recoverCapture" class="button" type="button" style="margin:0 18px 18px" hidden>録画状態をリセット</button>
     </section>

@@ -8,7 +8,7 @@ import {recordingArchive,metadataBlob,recordingShareFiles,shareRecordingFiles,sa
 
 const $=id=>document.getElementById(id);
 const preview=$('preview'), playback=$('playback');
-const APP_VERSION='2026.09.22.2';
+const APP_VERSION='2026.09.22.3';
 $('appVersion').textContent=`バージョン ${APP_VERSION}`;
 let portraitCaptureWidth=0;
 function updateCaptureWidth(){
@@ -21,6 +21,7 @@ window.addEventListener('resize',updateCaptureWidth);updateCaptureWidth();
 let stream=null, recorder=null, watchId=null, gpsGranted=false, cameraReady=false, preparing=false, saving=false, libraryBusy=false;
 let facingMode='environment', gpsLog=[], sessionGps=[], latestGps=null;
 let videoWriter=null,sessionId=null,failedVideoPath=null;
+let audioEnabled=false;
 let startedAt=0, startedMono=0, stoppedMono=0, timerId, wakeLock=null, recordingProblem='';
 let result=null, unsaved=false, playbackUrl=null;
 const liveMap=new TrackMap('live'), reviewMap=new TrackMap('route');
@@ -49,6 +50,10 @@ const isRecording=()=>recorder?.state==='recording';
 function status(message,error=false){$('status').hidden=!message;$('status').textContent=message;$('status').style.color=error?'#ff9ca7':''}
 function libraryStatus(message){$('libraryStatus').textContent=message;$('libraryStatus').hidden=!message}
 function controls(){
+  const focused=isRecording();
+  const entering=focused&&!document.body.classList.contains('recording-focus');
+  document.body.classList.toggle('recording-focus',focused);
+  if(entering){window.scrollTo({top:0,behavior:'instant'});$('recordBtn').focus({preventScroll:true})}
   const busy=isRecording()||saving||preparing||libraryBusy||exportBusy;
   $('recoverCapture').disabled=busy;
   $('prepareBtn').disabled=busy;
@@ -58,6 +63,9 @@ function controls(){
   $('recordBtn').disabled=preparing||saving||libraryBusy||exportBusy||(!isRecording()&&(!cameraReady||!gpsGranted||!window.MediaRecorder));
   $('switchBtn').disabled=busy||!cameraReady;
   $('recordAudio').disabled=busy;$('qualitySelect').disabled=busy;
+  $('recordAudio').setAttribute('aria-pressed',String(audioEnabled));
+  $('recordAudio').setAttribute('aria-label',audioEnabled?'マイクをオフにする':'マイクをオンにする');
+  $('recordAudio').title=audioEnabled?'マイク：オン':'マイク：オフ';
   $('clearTrackBtn').disabled=isRecording()||saving;
   $('recordingSelect').disabled=busy||libraryBusy;
   $('deleteRecording').disabled=busy||libraryBusy||!$('recordingSelect').value;
@@ -80,7 +88,7 @@ async function prepareCamera(){
   startGps();
   try {
     stream?.getTracks().forEach(track=>track.stop());
-    stream=await navigator.mediaDevices.getUserMedia(cameraConstraints($('qualitySelect').value,facingMode,$('recordAudio').checked));
+    stream=await navigator.mediaDevices.getUserMedia(cameraConstraints($('qualitySelect').value,facingMode,audioEnabled));
     await optimizeTrack(stream.getVideoTracks()[0],$('qualitySelect').value);
     preview.srcObject=stream;
     await preview.play();
@@ -401,7 +409,7 @@ $('recoverCapture').onclick=async()=>{
   if(watchId!==null)navigator.geolocation.clearWatch(watchId);watchId=null;gpsGranted=false;latestGps=null;
   $('recoverCapture').hidden=true;await prepareCamera();
 };
-$('recordAudio').onchange=()=>{if(cameraReady)prepareCamera()};
+$('recordAudio').onclick=()=>{if(isRecording()||saving||preparing)return;audioEnabled=!audioEnabled;controls();if(cameraReady)prepareCamera()};
 $('qualitySelect').onchange=async()=>{
   if(isRecording()||saving)return;
   try{localStorage.setItem('road-damage-quality',$('qualitySelect').value)}catch{}
